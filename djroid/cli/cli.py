@@ -1,7 +1,7 @@
 import click
 from pathlib import Path
-from .db import init_db, get_db
-from .ingestors import SongIngestor
+from ..db import init_db, get_db
+from ..ingestors import SongIngestor
 
 @click.group()
 def cli():
