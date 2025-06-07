@@ -2,7 +2,7 @@ from typing import List, Optional
 from sqlalchemy import Table, Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import mapped_column, relationship, Mapped
-from datetime import datetime
+from datetime import datetime, UTC
 import uuid
 from ..session import Base
 from .artist import ArtistRole, Artist
@@ -26,8 +26,8 @@ class Song(Base):
     bpm: Mapped[float] = mapped_column(Float)
     key: Mapped[str] = mapped_column(String)
     remix_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('songs.id'), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(UTC), onupdate=datetime.now(UTC))
 
     # Relationships with type hints
     artists: Mapped[List[Artist]] = relationship("Artist", secondary=songs_artists, back_populates="songs")

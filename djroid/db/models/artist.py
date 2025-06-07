@@ -6,7 +6,7 @@ from sqlalchemy.orm import mapped_column, relationship, Mapped
 from datetime import datetime
 import uuid
 from ..session import Base
-from .song import songs_artists
+from .song import songs_artists, Song
 
 class ArtistRole(Enum):
     PRIMARY = "primary"
