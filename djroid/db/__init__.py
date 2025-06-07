@@ -1,6 +1,5 @@
 from .session import Base, engine, get_db
 from .models.song import Song
-from .models.playlist import Playlist
 from .models.tag import Tag
 
 # Create all tables

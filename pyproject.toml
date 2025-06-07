@@ -22,6 +22,7 @@ dependencies = [
 
 [project.scripts]
 djroid = "djroid.cli:cli"
+dj = "djroid.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["djroid"]

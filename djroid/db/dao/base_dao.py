@@ -15,13 +15,20 @@ class BaseDAO(ABC, Generic[ModelType]):
         """Get a single record by ID"""
         return self.db.query(self.model).filter(self.model.id == id).first()
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> List[T]:
+    def get_all(self, skip: int = 0, limit: int = 100) -> List[ModelType]:
         """Get all records with pagination"""
         return self.db.query(self.model).offset(skip).limit(limit).all()
 
-    def update(self, db_obj: T, obj_in: dict) -> ModelType:
+    def update(self, id: uuid.UUID, attrs: dict) -> ModelType:
         """Update an existing record with new data"""
-        for field, value in obj_in.items():
+        db_obj = self.get(id)
+        if not db_obj:
+            raise ValueError(f"Record with id {id} not found")
+        
+        valid_fields = db_obj.__table__.columns.keys()
+        for field, value in attrs.items():
+            if field not in valid_fields:
+                raise ValueError(f"Invalid field: {field}")
             setattr(db_obj, field, value)
         self.db.add(db_obj)
         self.db.commit()

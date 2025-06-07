@@ -1,26 +1,19 @@
 from typing import List
-from enum import Enum
-from sqlalchemy import Table, Column, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy import String, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import mapped_column, relationship, Mapped
-from datetime import datetime
+from datetime import datetime, UTC
 import uuid
 from ..session import Base
-from .song import songs_artists, Song
-
-class ArtistRole(Enum):
-    PRIMARY = "primary"
-    FEATURE = "feature"
-    ORIGINAL_ARTIST = "original_artist"
-    PRODUCER = "producer"
+from .associations import songs_artists
 
 class Artist(Base):
-    __tablename__ = "artist"
-
+    __tablename__ = "artists"
+    
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name: Mapped[str] = mapped_column(String, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(UTC), onupdate=datetime.now(UTC))
 
     # Relationships
     songs: Mapped[List["Song"]] = relationship("Song", secondary=songs_artists, back_populates="artists")

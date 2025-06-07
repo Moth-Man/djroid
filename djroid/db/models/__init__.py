@@ -1,5 +1,6 @@
+from .associations import songs_artists, ArtistRole
+from .artist import Artist
 from .song import Song
-from .playlist import Playlist
 from .tag import Tag
 
-__all__ = ['Song', 'Playlist', 'Tag'] 
+__all__ = ['Song', 'Artist', 'ArtistRole', 'songs_artists', 'Tag'] 
