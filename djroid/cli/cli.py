@@ -1,12 +1,19 @@
 import click
-from djroid.cli.crate_service import CrateService
+from djroid.cli.services.crate_service import CrateService
 from pathlib import Path
 from ..db import init_db, get_db
-from ..ingestors import SongIngestor
+from ..logging import setup_logging, get_logger
+from ..config import LOG_LEVEL
+
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 @click.group()
 def cli():
     """DJroid - A DJ's music library management tool."""
+    # Initialize logging when CLI starts
+    setup_logging(LOG_LEVEL)
+    logger.info("Starting DJroid CLI")
     pass
 
 @cli.command()
@@ -15,10 +22,15 @@ def cli():
 @click.option('--file-path', required=True, type=click.Path(), help='Path where the crate will be created')
 def crate(prompt: str, name: str, file_path: str):
     """Create a crate."""
-    click.echo("Creating crate...")
-    crate_service = CrateService(name, file_path, prompt)
-    crate_service.generate_crate()
-    click.echo("Crate created successfully.")
+    logger.info(f"Creating crate '{name}' with prompt: {prompt}")
+    try:
+        crate_service = CrateService(name, file_path, prompt)
+        crate_service.generate_crate()
+        logger.info(f"Successfully created crate: {name}")
+        click.echo("Crate created successfully.")
+    except Exception as e:
+        logger.error(f"Failed to create crate: {str(e)}", exc_info=True)
+        click.echo(f"Error creating crate: {str(e)}", err=True)
 
 if __name__ == '__main__':
     cli()

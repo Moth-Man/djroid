@@ -1,0 +1,4 @@
+2025-06-07 18:05:55 - djroid.cli.cli - INFO - cli.py:16 - Starting DJroid CLI
+2025-06-07 18:05:55 - djroid.cli.cli - INFO - cli.py:25 - Creating crate 'test_crate' with prompt: Test prompt.
+2025-06-07 18:05:55 - djroid.cli.services.crate_service - INFO - crate_service.py:11 - Generating crate test_crate with prompt Test prompt. and file path /test/dir
+2025-06-07 18:05:55 - djroid.cli.cli - INFO - cli.py:29 - Successfully created crate: test_crate
