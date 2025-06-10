@@ -13,11 +13,26 @@ authors = [
     { name = "Your Name", email = "your.email@example.com" }
 ]
 dependencies = [
-    "sqlalchemy",
+    # Core dependencies
+    "sqlalchemy==2.0.41",
     "psycopg2-binary",
-    "python-dotenv",
+    "python-dotenv==1.1.0",
     "mutagen",
-    "click",
+    "click==8.1.8",
+    
+    # LangGraph ecosystem
+    "langgraph==0.4.8",
+    "langgraph-cli==0.3.1",
+    "langgraph-sdk==0.1.70",
+    "langgraph-checkpoint-sqlite==2.0.10",
+    "langsmith==0.3.45",
+    
+    # LangChain ecosystem
+    "langchain-community==0.3.24",
+    "langchain-core==0.3.64",
+    "langchain-openai==0.3.21",
+    "langchain-experimental==0.3.4",
+    "openai==1.86.0",
 ]
 
 [project.scripts]

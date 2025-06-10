@@ -3,16 +3,18 @@ import os
 
 load_dotenv()
 
-# Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/djroid_dev")
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
+LANGSMITH_API_KEY: str = os.getenv("LANGSMITH_API_KEY")
+
+# LangChain Settings
+LANGSMITH_TRACING: bool = os.getenv("LANGSMITH_TRACING", "true").lower() == "true"
+LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT", "djroid")
+
+# Database
+DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/djroid")
 
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-
-# LangChain configuration
-LANGCHAIN_TRACING_V2 = os.getenv("LANGCHAIN_TRACING_V2", "true").lower() == "true"
-LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Application settings
 APP_NAME = "DJroid"
@@ -33,7 +35,7 @@ def validate_config():
     """Validate all required configuration"""
     required_vars = {
         "DATABASE_URL": DATABASE_URL,
-        "LANGCHAIN_API_KEY": LANGCHAIN_API_KEY,
+        "LANGCHAIN_API_KEY": LANGSMITH_API_KEY,
         "OPENAI_API_KEY": OPENAI_API_KEY
     }
     
