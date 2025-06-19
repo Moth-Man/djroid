@@ -1,6 +1,6 @@
 from djroid.logging import get_logger
 
-class CrateService:
+class Crate:
   def __init__(self, name: str, file_path: str, prompt: str):
     self.name = name
     self.file_path = file_path

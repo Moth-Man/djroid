@@ -1,0 +1,32 @@
+2025-06-19 16:00:59 - djroid.cli.cli - INFO - cli.py:16 - Starting DJroid CLI
+2025-06-19 16:00:59 - djroid.cli.cli - INFO - cli.py:25 - Creating crate 'test_crate' with prompt: Test prompt.
+2025-06-19 16:00:59 - djroid.services.crate - INFO - crate.py:11 - Generating crate test_crate with prompt Test prompt. and file path /test/dir
+2025-06-19 16:00:59 - djroid.cli.cli - INFO - cli.py:29 - Successfully created crate: test_crate
+2025-06-19 16:10:46 - djroid.cli.cli - INFO - cli.py:17 - Starting DJroid CLI
+2025-06-19 16:10:46 - djroid.cli.cli - INFO - cli.py:39 - Starting tag schema setup
+2025-06-19 16:15:41 - djroid.cli.cli - INFO - cli.py:43 - Tag schema setup completed successfully
+2025-06-19 16:16:16 - djroid.cli.cli - INFO - cli.py:17 - Starting DJroid CLI
+2025-06-19 16:16:16 - djroid.cli.cli - INFO - cli.py:39 - Starting tag schema setup
+2025-06-19 16:16:39 - djroid.cli.cli - INFO - cli.py:43 - Tag schema setup completed successfully
+2025-06-19 16:28:44 - djroid.cli.cli - INFO - cli.py:17 - Starting DJroid CLI
+2025-06-19 16:28:44 - djroid.cli.cli - INFO - cli.py:39 - Starting tag schema setup
+2025-06-19 16:32:13 - djroid.cli.cli - INFO - cli.py:17 - Starting DJroid CLI
+2025-06-19 16:32:13 - djroid.cli.cli - INFO - cli.py:39 - Starting tag schema setup
+2025-06-19 16:35:44 - djroid.cli.cli - INFO - cli.py:43 - Tag schema setup completed successfully
+2025-06-19 16:35:46 - djroid.cli.cli - INFO - cli.py:17 - Starting DJroid CLI
+2025-06-19 16:35:46 - djroid.cli.cli - INFO - cli.py:39 - Starting tag schema setup
+2025-06-19 16:39:51 - djroid.cli.cli - INFO - cli.py:43 - Tag schema setup completed successfully
+2025-06-19 16:39:54 - djroid.cli.cli - INFO - cli.py:17 - Starting DJroid CLI
+2025-06-19 16:39:54 - djroid.cli.cli - INFO - cli.py:39 - Starting tag schema setup
+2025-06-19 16:40:32 - djroid.cli.cli - INFO - cli.py:17 - Starting DJroid CLI
+2025-06-19 16:40:32 - djroid.cli.cli - INFO - cli.py:39 - Starting tag schema setup
+2025-06-19 16:40:51 - djroid.cli.cli - INFO - cli.py:43 - Tag schema setup completed successfully
+2025-06-19 16:40:52 - djroid.cli.cli - INFO - cli.py:17 - Starting DJroid CLI
+2025-06-19 16:40:52 - djroid.cli.cli - INFO - cli.py:39 - Starting tag schema setup
+2025-06-19 16:40:53 - djroid.cli.cli - INFO - cli.py:43 - Tag schema setup completed successfully
+2025-06-19 16:40:56 - djroid.cli.cli - INFO - cli.py:17 - Starting DJroid CLI
+2025-06-19 16:40:56 - djroid.cli.cli - INFO - cli.py:39 - Starting tag schema setup
+2025-06-19 17:08:02 - djroid.cli.cli - INFO - cli.py:43 - Tag schema setup completed successfully
+2025-06-19 17:08:05 - djroid.cli.cli - INFO - cli.py:19 - Starting DJroid CLI
+2025-06-19 17:08:05 - djroid.cli.cli - INFO - cli.py:41 - Starting tag schema setup
+2025-06-19 17:08:08 - djroid.cli.cli - INFO - cli.py:45 - Tag schema setup completed successfully

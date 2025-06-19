@@ -1,9 +1,12 @@
 import click
-from djroid.cli.services.crate_service import CrateService
+from djroid.services.crate import Crate
 from pathlib import Path
 from ..db import init_db, get_db
 from ..logging import setup_logging, get_logger
 from ..config import LOG_LEVEL
+from djroid.services.tag_schema import TagSchema
+from djroid.services.tag import Tag
+from djroid.services.tag_interactive import TagInteractive
 
 # Initialize logger for this module
 logger = get_logger(__name__)
@@ -24,13 +27,57 @@ def crate(prompt: str, name: str, file_path: str):
     """Create a crate."""
     logger.info(f"Creating crate '{name}' with prompt: {prompt}")
     try:
-        crate_service = CrateService(name, file_path, prompt)
+        crate_service = Crate(name, file_path, prompt)
         crate_service.generate_crate()
         logger.info(f"Successfully created crate: {name}")
         click.echo("Crate created successfully.")
     except Exception as e:
         logger.error(f"Failed to create crate: {str(e)}", exc_info=True)
         click.echo(f"Error creating crate: {str(e)}", err=True)
+
+@cli.command(name='tag-schema')
+def tag_schema():
+    """Setup your tagging schema with categories and values."""
+    logger.info("Starting tag schema setup")
+    try:
+        tag_schema_service = TagSchema()
+        tag_schema_service.setup_schema()
+        logger.info("Tag schema setup completed successfully")
+    except Exception as e:
+        logger.error(f"Failed to setup tag schema: {str(e)}", exc_info=True)
+        click.echo(f"Error setting up tag schema: {str(e)}", err=True)
+
+@cli.command()
+@click.argument('directory', type=click.Path(exists=True), required=False)
+@click.option('--file', type=click.Path(exists=True), help='Tag a single file instead of a directory')
+@click.option('--interactive/--no-interactive', default=True, help='Use interactive interface')
+def tag(directory: str, file: str, interactive: bool):
+    """Tag a song or list of songs"""
+    logger.info("Starting tag operation")
+    try:
+        if file:
+            # Tag single file
+            file_path = Path(file)
+            if interactive:
+                tag_service = TagInteractive()
+                tag_service.edit_file_tags_interactive(file_path)
+            else:
+                tag_service = Tag()
+                tag_service.edit_file_tags(file_path)
+        else:
+            # Tag directory
+            dir_path = Path(directory) if directory else Path.cwd()
+            if interactive:
+                tag_service = TagInteractive()
+                tag_service.run_interactive_selector(dir_path)
+            else:
+                tag_service = Tag()
+                tag_service.tag_songs(dir_path)
+            
+        logger.info("Tag operation completed successfully")
+    except Exception as e:
+        logger.error(f"Failed to tag songs: {str(e)}", exc_info=True)
+        click.echo(f"Error tagging songs: {str(e)}", err=True)
 
 if __name__ == '__main__':
     cli()
