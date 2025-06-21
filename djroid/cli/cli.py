@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 @click.group()
 def cli():
-    """DJroid - A DJ's music library management tool."""
+    """DJroid - An AI-assisted DJ tool suit."""
     # Initialize logging when CLI starts
     setup_logging(LOG_LEVEL)
     logger.info("Starting DJroid CLI")

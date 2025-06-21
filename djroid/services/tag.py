@@ -84,7 +84,7 @@ class Tag:
                 return tags
             
             # Handle MP3 files
-            if hasattr(audio, 'tags') and audio.tags:
+            if file_path.suffix.lower() == '.mp3' and hasattr(audio, 'tags') and audio.tags:
                 if hasattr(audio.tags, 'getall'):
                     for key in audio.tags.keys():
                         if key.startswith('TXXX:'):
@@ -92,14 +92,23 @@ class Tag:
                             values = audio.tags.getall(key)
                             tags[category] = [str(v) for v in values]
             
-            # Handle AIFF files
-            elif hasattr(audio, 'tags'):
+            # Handle AIFF and other files
+            elif hasattr(audio, 'tags') and audio.tags:
                 for key, value in audio.tags.items():
                     if key.startswith('TXXX:'):
                         category = key[5:]
-                        if category not in tags:
-                            tags[category] = []
-                        tags[category].append(str(value))
+                        if hasattr(value, 'text'):
+                            # Handle comma-separated values
+                            text_values = value.text
+                            if isinstance(text_values, list):
+                                # If it's already a list, use as is
+                                tags[category] = [str(v) for v in text_values]
+                            else:
+                                # If it's a string, split by commas
+                                tags[category] = [v.strip() for v in str(text_values).split(',')]
+                        else:
+                            # Fallback
+                            tags[category] = [str(value)]
                         
         except Exception as e:
             logger.warning(f"Could not read tags from {file_path}: {e}")
@@ -116,19 +125,44 @@ class Tag:
             if audio is None:
                 return metadata
             
-            # Common metadata fields
-            common_fields = ['title', 'artist', 'album', 'date', 'genre', 'bpm', 'key']
+            # Check if the file has tags
+            if not hasattr(audio, 'tags') or audio.tags is None:
+                return metadata
             
-            for field in common_fields:
-                if hasattr(audio, field) and getattr(audio, field):
-                    metadata[field] = str(getattr(audio, field)[0])
-                elif hasattr(audio, 'tags') and audio.tags:
-                    # Try to get from tags
-                    if hasattr(audio.tags, 'get'):
-                        value = audio.tags.get(field.upper())
-                        if value:
-                            metadata[field] = str(value)
-                        
+            # Common metadata fields with their tag keys
+            tag_mappings = {
+                'title': ['TIT2', 'TITLE', 'title'],
+                'artist': ['TPE1', 'ARTIST', 'artist'],
+                'album': ['TALB', 'ALBUM', 'album'],
+                'date': ['TDRC', 'DATE', 'date'],
+                'genre': ['TCON', 'GENRE', 'genre'],
+                'bpm': ['TBPM', 'BPM', 'bpm'],
+                'key': ['TKEY', 'KEY', 'key']
+            }
+            
+            for field, possible_keys in tag_mappings.items():
+                for key in possible_keys:
+                    try:
+                        # Try different ways to access the tag
+                        if hasattr(audio.tags, 'get'):
+                            value = audio.tags.get(key)
+                            if value:
+                                if hasattr(value, 'text'):
+                                    metadata[field] = str(value.text[0])
+                                else:
+                                    metadata[field] = str(value)
+                                break
+                        elif hasattr(audio.tags, '__getitem__'):
+                            value = audio.tags[key]
+                            if value:
+                                if hasattr(value, 'text'):
+                                    metadata[field] = str(value.text[0])
+                                else:
+                                    metadata[field] = str(value)
+                                break
+                    except (KeyError, AttributeError, IndexError):
+                        continue
+                    
         except Exception as e:
             logger.warning(f"Could not read metadata from {file_path}: {e}")
         
@@ -155,7 +189,7 @@ class Tag:
             self.console.print("\n[yellow]No custom tags found.[/yellow]")
     
     def add_tag_to_file(self, file_path: Path, category: str, value: str) -> bool:
-        """Add a TXXX tag to a music file"""
+        """Add a value to a TXXX tag in a music file"""
         try:
             audio = File(str(file_path))
             
@@ -168,13 +202,48 @@ class Tag:
                     audio.tags = ID3()
                 # For other formats, we might need different handling
             
-            # Add TXXX tag
             txxx_key = f'TXXX:{category.upper()}'
             
-            if hasattr(audio.tags, 'add'):
+            # Check if the category already exists
+            existing_values = []
+            
+            # Use file extension to determine format instead of checking methods
+            if file_path.suffix.lower() == '.mp3':
+                # MP3 files - get all existing values
+                if hasattr(audio.tags, 'getall'):
+                    existing_frames = audio.tags.getall(txxx_key)
+                    for frame in existing_frames:
+                        if hasattr(frame, 'text'):
+                            existing_values.extend(frame.text)
+            else:
+                # AIFF and other formats - get values from single frame
+                try:
+                    existing_frame = audio.tags[txxx_key]
+                    if hasattr(existing_frame, 'text'):
+                        existing_values.extend(existing_frame.text)
+                except KeyError:
+                    pass  # Category doesn't exist yet
+            
+            # Check if value already exists
+            if value in existing_values:
+                logger.info(f"Value '{value}' already exists in category '{category}'")
+                return True  # Not an error, just already exists
+            
+            # Add the new value
+            if file_path.suffix.lower() == '.mp3':
+                # MP3 files - add new frame
                 audio.tags.add(TXXX(encoding=3, desc=category.upper(), text=value))
-            elif hasattr(audio.tags, '__setitem__'):
-                audio.tags[txxx_key] = TXXX(encoding=3, desc=category.upper(), text=value)
+            else:
+                # AIFF and other formats - update existing frame or create new one
+                if existing_values:
+                    # Update existing frame with all values as comma-separated string
+                    all_values = existing_values + [value]
+                    # Join with commas and spaces for readability
+                    combined_text = ", ".join(all_values)
+                    audio.tags[txxx_key] = TXXX(encoding=3, desc=category.upper(), text=combined_text)
+                else:
+                    # Create new frame
+                    audio.tags[txxx_key] = TXXX(encoding=3, desc=category.upper(), text=value)
             
             # Save the file
             audio.save()
@@ -248,7 +317,7 @@ class Tag:
             self.console.print(f"  {i}. {category}")
         
         try:
-            choice = IntPrompt.ask("Enter category number", default=1)
+            choice = IntPrompt.ask("Enter category number", default=0)
             if 1 <= choice <= len(categories):
                 category = categories[choice - 1]
             else:
@@ -265,7 +334,7 @@ class Tag:
             self.console.print(f"  {i}. {value}")
         
         try:
-            choice = IntPrompt.ask("Enter value number", default=1)
+            choice = IntPrompt.ask("Enter value number", default=0)
             if 1 <= choice <= len(values):
                 value = values[choice - 1]
             else:

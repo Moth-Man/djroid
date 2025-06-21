@@ -35,4 +35,9 @@ wheels/
 
 # OS
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Logs
+logs/
+*.log
+djroid.log 
