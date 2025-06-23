@@ -203,16 +203,24 @@ class Tag:
     def add_tag_to_file(self, file_path: Path, category: str, value: str) -> bool:
         """Add a value to a TXXX tag in a music file"""
         try:
-            audio = File(str(file_path))
-            
-            if audio is None:
-                return False
-            
-            # Ensure tags exist
-            if not hasattr(audio, 'tags') or audio.tags is None:
-                if file_path.suffix.lower() == '.mp3':
+            # Use specific file type handling for better compatibility
+            if file_path.suffix.lower() == '.mp3':
+                audio = File(str(file_path))
+                if audio is None:
+                    return False
+                
+                # Ensure tags exist for MP3
+                if not hasattr(audio, 'tags') or audio.tags is None:
                     audio.tags = ID3()
-                # For other formats, we might need different handling
+            else:
+                # For AIFF and other formats, use the generic File approach
+                audio = File(str(file_path))
+                if audio is None:
+                    return False
+                
+                # Ensure tags exist for other formats
+                if not hasattr(audio, 'tags') or audio.tags is None:
+                    audio.add_tags()
             
             txxx_key = f'TXXX:{category.upper()}'
             
