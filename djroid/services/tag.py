@@ -169,22 +169,34 @@ class Tag:
         return metadata
     
     def display_file_info(self, file_path: Path) -> None:
-        """Display file information and existing tags"""
+        """Display file information in two tables: metadata and custom tags"""
         self.console.print(f"\n[bold blue]File: {file_path.name}[/bold blue]")
         
         # Get basic metadata
         metadata = self.get_audio_metadata(file_path)
         if metadata:
-            self.console.print("\n[bold cyan]Basic Metadata:[/bold cyan]")
+            metadata_table = Table(title="Basic Metadata", box=box.ROUNDED, show_lines=True)
+            metadata_table.add_column("Field", style="cyan", no_wrap=True)
+            metadata_table.add_column("Value", style="green")
+            
             for key, value in metadata.items():
-                self.console.print(f"  {key.title()}: {value}")
+                metadata_table.add_row(key.title(), value)
+            
+            self.console.print(metadata_table)
+        else:
+            self.console.print("\n[yellow]No basic metadata found.[/yellow]")
         
         # Get existing TXXX tags
         existing_tags = self.get_file_tags(file_path)
         if existing_tags:
-            self.console.print("\n[bold cyan]Existing Custom Tags:[/bold cyan]")
+            tags_table = Table(title="Custom Tags", box=box.ROUNDED, show_lines=True)
+            tags_table.add_column("Category", style="cyan", no_wrap=True)
+            tags_table.add_column("Values", style="green")
+            
             for category, values in existing_tags.items():
-                self.console.print(f"  {category}: {', '.join(values)}")
+                tags_table.add_row(category, ", ".join(values))
+            
+            self.console.print(tags_table)
         else:
             self.console.print("\n[yellow]No custom tags found.[/yellow]")
     
@@ -284,107 +296,174 @@ class Tag:
             logger.error(f"Failed to remove tag from {file_path}: {e}")
             return False
     
-    def edit_file_tags(self, file_path: Path) -> None:
-        """Interactive tag editing for a single file"""
+    def display_categories(self, categories: List[str], selected_index: int) -> None:
+        """Display categories with arrow key navigation"""
+        self.console.print("\n[bold cyan]Tag Categories:[/bold cyan]")
+        self.console.print("Use ↑/↓ to navigate, Enter/→ to select, q to quit")
+        
+        for i, category in enumerate(categories):
+            if i == selected_index:
+                self.console.print(f"  [bold green]▶ {category}[/bold green]")
+            else:
+                self.console.print(f"    {category}")
+    
+    def display_values(self, category: str, values: List[str], selected_values: set, selected_index: int) -> None:
+        """Display values with checkbox-style selection"""
+        self.console.print(f"\n[bold green]Values for '{category}':[/bold green]")
+        self.console.print("Use ↑/↓ to navigate, Space to toggle, Enter to save, ← to go back")
+        
+        for i, value in enumerate(values):
+            is_selected = value in selected_values
+            is_highlighted = i == selected_index
+            
+            if is_selected:
+                checkbox = "[green]✓[/green]"
+            else:
+                checkbox = "[red]✗[/red]"
+            
+            if is_highlighted:
+                self.console.print(f"  [bold green]▶ {checkbox} {value}[/bold green]")
+            else:
+                self.console.print(f"    {checkbox} {value}")
+    
+    def get_key_press(self) -> str:
+        """Get a single key press, handling arrow keys and special characters"""
+        try:
+            # For Unix-like systems
+            import tty
+            import termios
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(sys.stdin.fileno())
+                ch = sys.stdin.read(1)
+                
+                # Check for escape sequences (arrow keys)
+                if ch == '\x1b':
+                    next_ch = sys.stdin.read(1)
+                    if next_ch == '[':
+                        third_ch = sys.stdin.read(1)
+                        if third_ch == 'A':
+                            return 'up'
+                        elif third_ch == 'B':
+                            return 'down'
+                        elif third_ch == 'C':
+                            return 'right'
+                        elif third_ch == 'D':
+                            return 'left'
+                
+                return ch
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except (ImportError, AttributeError):
+            # For Windows systems
+            try:
+                import msvcrt
+                ch = msvcrt.getch().decode('utf-8')
+                
+                # Handle Windows arrow keys
+                if ch == '\xe0':
+                    next_ch = msvcrt.getch().decode('utf-8')
+                    if next_ch == 'H':
+                        return 'up'
+                    elif next_ch == 'P':
+                        return 'down'
+                    elif next_ch == 'M':
+                        return 'right'
+                    elif next_ch == 'K':
+                        return 'left'
+                
+                return ch
+            except:
+                # Fallback to simple input
+                return input()
+    
+    def edit_category_values(self, file_path: Path, category: str) -> None:
+        """Edit values for a specific category with checkbox-style selection"""
+        values = self.schema[category]
+        if not values:
+            self.console.print(f"[yellow]No values defined for category '{category}'[/yellow]")
+            return
+        
+        # Get current values for this category
+        current_tags = self.get_file_tags(file_path)
+        current_values = set(current_tags.get(category, []))
+        
+        selected_index = 0
+        
         while True:
             self.console.clear()
             self.display_file_info(file_path)
+            self.display_values(category, values, current_values, selected_index)
             
-            # Show available schema categories
-            self.console.print(f"\n[bold green]Available Categories:[/bold green]")
-            for i, category in enumerate(self.schema.keys(), 1):
-                self.console.print(f"  {i}. {category}")
+            key = self.get_key_press()
             
-            action = Prompt.ask(
-                "\nChoose action",
-                choices=["add", "remove", "back"],
-                default="back"
-            )
-            
-            if action == "back":
+            if key == 'left':
+                break  # Go back to categories
+            elif key == 'up':
+                selected_index = max(0, selected_index - 1)
+            elif key == 'down':
+                selected_index = min(len(values) - 1, selected_index + 1)
+            elif key == ' ':  # Space to toggle
+                value = values[selected_index]
+                if value in current_values:
+                    # Remove the value
+                    if self.remove_tag_from_file(file_path, category, value):
+                        current_values.remove(value)
+                        self.console.print(f"[green]Removed: {category} = {value}[/green]")
+                    else:
+                        self.console.print(f"[red]Failed to remove: {category} = {value}[/red]")
+                else:
+                    # Add the value
+                    if self.add_tag_to_file(file_path, category, value):
+                        current_values.add(value)
+                        self.console.print(f"[green]Added: {category} = {value}[/green]")
+                    else:
+                        self.console.print(f"[red]Failed to add: {category} = {value}[/red]")
+                
+                # Brief pause to show the message
+                import time
+                time.sleep(0.5)
+            elif key == 'enter':
+                # Save and go back
                 break
-            elif action == "add":
-                self.add_tags_to_file(file_path)
-            elif action == "remove":
-                self.remove_tags_from_file(file_path)
     
-    def add_tags_to_file(self, file_path: Path) -> None:
-        """Add tags to a file"""
-        # Select category
+    def edit_file_tags_enhanced(self, file_path: Path) -> None:
+        """Enhanced interactive tag editing with arrow key navigation"""
         categories = list(self.schema.keys())
-        self.console.print("\n[bold cyan]Select category:[/bold cyan]")
-        for i, category in enumerate(categories, 1):
-            self.console.print(f"  {i}. {category}")
-        
-        try:
-            choice = IntPrompt.ask("Enter category number", default=0)
-            if 1 <= choice <= len(categories):
-                category = categories[choice - 1]
-            else:
-                self.console.print("[red]Invalid choice![/red]")
-                return
-        except ValueError:
-            self.console.print("[red]Please enter a valid number![/red]")
+        if not categories:
+            self.console.print("[red]No tag categories found in schema![/red]")
             return
         
-        # Show available values
-        values = self.schema[category]
-        self.console.print(f"\n[bold green]Available values for '{category}':[/bold green]")
-        for i, value in enumerate(values, 1):
-            self.console.print(f"  {i}. {value}")
+        selected_category_index = 0
         
-        try:
-            choice = IntPrompt.ask("Enter value number", default=0)
-            if 1 <= choice <= len(values):
-                value = values[choice - 1]
-            else:
-                self.console.print("[red]Invalid choice![/red]")
-                return
-        except ValueError:
-            self.console.print("[red]Please enter a valid number![/red]")
-            return
-        
-        # Add the tag
-        if self.add_tag_to_file(file_path, category, value):
-            self.console.print(f"[green]Added tag: {category} = {value}[/green]")
-        else:
-            self.console.print("[red]Failed to add tag![/red]")
+        while True:
+            self.console.clear()
+            self.display_file_info(file_path)
+            self.display_categories(categories, selected_category_index)
+            
+            key = self.get_key_press()
+            
+            if key.lower() == 'q':
+                break
+            elif key == 'up':
+                selected_category_index = max(0, selected_category_index - 1)
+            elif key == 'down':
+                selected_category_index = min(len(categories) - 1, selected_category_index + 1)
+            elif key in ['enter', 'right']:
+                # Enter the selected category
+                selected_category = categories[selected_category_index]
+                self.edit_category_values(file_path, selected_category)
     
-    def remove_tags_from_file(self, file_path: Path) -> None:
-        """Remove tags from a file"""
-        existing_tags = self.get_file_tags(file_path)
-        
-        if not existing_tags:
-            self.console.print("[yellow]No custom tags to remove![/yellow]")
+    def tag_single_file(self, file_path: Path) -> None:
+        """Main entry point for enhanced single file tagging"""
+        if not file_path.exists():
+            self.console.print(f"[red]File not found: {file_path}[/red]")
             return
         
-        # Show existing tags
-        self.console.print("\n[bold red]Existing tags:[/bold red]")
-        tag_list = []
-        for category, values in existing_tags.items():
-            for value in values:
-                tag_list.append((category, value))
-        
-        for i, (category, value) in enumerate(tag_list, 1):
-            self.console.print(f"  {i}. {category} = {value}")
-        
-        try:
-            choice = IntPrompt.ask("Enter tag number to remove", default=1)
-            if 1 <= choice <= len(tag_list):
-                category, value = tag_list[choice - 1]
-            else:
-                self.console.print("[red]Invalid choice![/red]")
-                return
-        except ValueError:
-            self.console.print("[red]Please enter a valid number![/red]")
-            return
-        
-        # Confirm removal
-        if Confirm.ask(f"Remove tag '{category} = {value}'?"):
-            if self.remove_tag_from_file(file_path, category, value):
-                self.console.print(f"[green]Removed tag: {category} = {value}[/green]")
-            else:
-                self.console.print("[red]Failed to remove tag![/red]")
+        self.console.print(f"[green]Tagging file: {file_path.name}[/green]")
+        self.edit_file_tags_enhanced(file_path)
+        self.console.print("[green]Tagging completed![/green]")
     
     def tag_songs(self, directory: Optional[Path] = None):
         """Main tagging interface"""
@@ -423,6 +502,6 @@ class Tag:
             elif key == '' or key.lower() == 'enter':
                 # Edit the selected file
                 selected_file = music_files[selected_index]
-                self.edit_file_tags(selected_file)
+                self.tag_single_file(selected_file)
         
         self.console.print("[green]Tagging session completed![/green]")

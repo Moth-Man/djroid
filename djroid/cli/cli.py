@@ -62,8 +62,9 @@ def tag(directory: str, file: str, interactive: bool):
                 tag_service = TagInteractive()
                 tag_service.edit_file_tags_interactive(file_path)
             else:
+                # Use enhanced tagging for --no-interactive mode
                 tag_service = Tag()
-                tag_service.edit_file_tags(file_path)
+                tag_service.tag_single_file(file_path)
         else:
             # Tag directory
             dir_path = Path(directory) if directory else Path.cwd()
