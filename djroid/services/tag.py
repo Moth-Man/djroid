@@ -22,6 +22,7 @@ class Tag:
         self.console = Console()
         self.schema_file = Path.home() / '.djroid' / 'tag_schema.json'
         self.schema: Dict[str, List[str]] = self.load_schema()
+        self.current_file: Optional[Path] = None
         
     def load_schema(self) -> Dict[str, List[str]]:
         """Load existing schema from file"""
@@ -162,6 +163,17 @@ class Tag:
                                 break
                     except (KeyError, AttributeError, IndexError):
                         continue
+            
+            # Special handling for Rekordbox comment (COMM tag)
+            try:
+                if hasattr(audio.tags, 'getall'):
+                    for comm in audio.tags.getall("COMM"):
+                        if hasattr(comm, 'lang') and hasattr(comm, 'desc') and hasattr(comm, 'text'):
+                            if comm.lang == "eng" and comm.desc == "":
+                                metadata['comment'] = str(comm.text[0])
+                                break
+            except (KeyError, AttributeError, IndexError):
+                pass
                     
         except Exception as e:
             logger.warning(f"Could not read metadata from {file_path}: {e}")
@@ -174,13 +186,23 @@ class Tag:
         
         # Get basic metadata
         metadata = self.get_audio_metadata(file_path)
-        if metadata:
+        
+        # Get Rekordbox comment separately for special handling
+        rekordbox_comment = self.get_rekordbox_comment(file_path)
+        
+        if metadata or rekordbox_comment:
             metadata_table = Table(title="Basic Metadata", box=box.ROUNDED, show_lines=True)
             metadata_table.add_column("Field", style="cyan", no_wrap=True)
             metadata_table.add_column("Value", style="green")
             
+            # Add regular metadata fields
             for key, value in metadata.items():
-                metadata_table.add_row(key.title(), value)
+                if key != 'comment':  # Skip generic comment, we'll handle Rekordbox comment separately
+                    metadata_table.add_row(key.title(), value)
+            
+            # Add Rekordbox comment with special styling
+            if rekordbox_comment:
+                metadata_table.add_row("[bold yellow]Comment[/bold yellow]", rekordbox_comment)
             
             self.console.print(metadata_table)
         else:
@@ -224,7 +246,7 @@ class Tag:
             
             txxx_key = f'TXXX:{category.upper()}'
             
-            # Check if the category already exists
+            # Check if the category already exists and get existing values
             existing_values = []
             
             # Use file extension to determine format instead of checking methods
@@ -240,12 +262,29 @@ class Tag:
                 try:
                     existing_frame = audio.tags[txxx_key]
                     if hasattr(existing_frame, 'text'):
-                        existing_values.extend(existing_frame.text)
+                        # Handle both list and string formats - use same logic as get_file_tags
+                        text_values = existing_frame.text
+                        if isinstance(text_values, list):
+                            # If it's already a list, split each item by commas
+                            for item in text_values:
+                                if isinstance(item, str):
+                                    # Split by commas and strip whitespace
+                                    split_values = [v.strip() for v in item.split(',') if v.strip()]
+                                    existing_values.extend(split_values)
+                                else:
+                                    existing_values.append(str(item))
+                        else:
+                            # If it's a string, split by commas and strip whitespace
+                            existing_values = [v.strip() for v in str(text_values).split(',') if v.strip()]
                 except KeyError:
                     pass  # Category doesn't exist yet
             
-            # Check if value already exists
-            if value in existing_values:
+            # Check if value already exists (case-insensitive)
+            # Also check for exact matches and trimmed whitespace
+            value_normalized = value.strip().lower()
+            existing_normalized = [v.strip().lower() for v in existing_values if v.strip()]
+            
+            if value_normalized in existing_normalized:
                 logger.info(f"Value '{value}' already exists in category '{category}'")
                 return True  # Not an error, just already exists
             
@@ -289,13 +328,70 @@ class Tag:
                     del audio.tags[txxx_key]
                 elif hasattr(audio.tags, 'delete'):
                     audio.tags.delete(txxx_key)
+                elif hasattr(audio.tags, 'delall'):
+                    audio.tags.delall(txxx_key)
             else:
-                # Remove specific value (this is more complex and format-dependent)
-                # For now, we'll remove the entire category
-                if hasattr(audio.tags, '__delitem__'):
-                    del audio.tags[txxx_key]
-                elif hasattr(audio.tags, 'delete'):
-                    audio.tags.delete(txxx_key)
+                # Remove specific value
+                if file_path.suffix.lower() == '.mp3':
+                    # MP3 files - remove specific frame
+                    if hasattr(audio.tags, 'getall'):
+                        existing_frames = audio.tags.getall(txxx_key)
+                        frames_to_keep = []
+                        for frame in existing_frames:
+                            if hasattr(frame, 'text') and value not in frame.text:
+                                frames_to_keep.append(frame)
+                        
+                        # Remove all frames and re-add the ones to keep
+                        audio.tags.delall(txxx_key)
+                        for frame in frames_to_keep:
+                            audio.tags.add(frame)
+                else:
+                    # AIFF and other formats - update the comma-separated string
+                    try:
+                        existing_frame = audio.tags[txxx_key]
+                        if hasattr(existing_frame, 'text'):
+                            # Parse existing values properly - use same logic as add_tag_to_file
+                            text_values = existing_frame.text
+                            if isinstance(text_values, list):
+                                # If it's already a list, split each item by commas
+                                existing_values = []
+                                for item in text_values:
+                                    if isinstance(item, str):
+                                        # Split by commas and strip whitespace
+                                        split_values = [v.strip() for v in item.split(',') if v.strip()]
+                                        existing_values.extend(split_values)
+                                    else:
+                                        existing_values.append(str(item))
+                            else:
+                                # If it's a string, split by commas and strip whitespace
+                                existing_values = [v.strip() for v in str(text_values).split(',') if v.strip()]
+                            
+                            # Remove the specific value (case-insensitive)
+                            value_to_remove = None
+                            for existing_value in existing_values:
+                                if existing_value.lower() == value.lower():
+                                    value_to_remove = existing_value
+                                    break
+                            
+                            if value_to_remove:
+                                existing_values.remove(value_to_remove)
+                                
+                                # Update or remove the tag
+                                if existing_values:
+                                    # Update with remaining values
+                                    combined_text = ", ".join(existing_values)
+                                    audio.tags[txxx_key] = TXXX(encoding=3, desc=category.upper(), text=combined_text)
+                                else:
+                                    # Remove entire category if no values left
+                                    if hasattr(audio.tags, '__delitem__'):
+                                        del audio.tags[txxx_key]
+                                    elif hasattr(audio.tags, 'delete'):
+                                        audio.tags.delete(txxx_key)
+                                    elif hasattr(audio.tags, 'delall'):
+                                        audio.tags.delall(txxx_key)
+                    except KeyError:
+                        # Category doesn't exist, nothing to remove
+                        pass
             
             audio.save()
             return True
@@ -319,9 +415,14 @@ class Tag:
         """Display values with checkbox-style selection"""
         self.console.print(f"\n[bold green]Values for '{category}':[/bold green]")
         self.console.print("Use ↑/↓ to navigate, Space to toggle, Enter to save, ← to go back")
+        self.console.print("Press 'd' to delete entire category")
+        
+        # Create a set of normalized selected values for case-insensitive comparison
+        selected_normalized = {v.strip().lower() for v in selected_values if v.strip()}
         
         for i, value in enumerate(values):
-            is_selected = value in selected_values
+            # Check if this value is currently selected (case-insensitive)
+            is_selected = value.strip().lower() in selected_normalized
             is_highlighted = i == selected_index
             
             if is_selected:
@@ -393,9 +494,17 @@ class Tag:
             self.console.print(f"[yellow]No values defined for category '{category}'[/yellow]")
             return
         
-        # Get current values for this category
+        # Get current values for this category from the file's TXXX tags
         current_tags = self.get_file_tags(file_path)
-        current_values = set(current_tags.get(category, []))
+        current_values = set()
+        
+        # Try to get values using the exact category name from schema
+        if category in current_tags:
+            current_values.update(current_tags[category])
+        
+        # Also try uppercase version (for consistency with TXXX tags)
+        if category.upper() in current_tags:
+            current_values.update(current_tags[category.upper()])
         
         selected_index = 0
         
@@ -414,10 +523,21 @@ class Tag:
                 selected_index = min(len(values) - 1, selected_index + 1)
             elif key == ' ':  # Space to toggle
                 value = values[selected_index]
-                if value in current_values:
+                
+                # Check if value is currently selected (case-insensitive)
+                is_currently_selected = any(v.strip().lower() == value.strip().lower() for v in current_values)
+                
+                if is_currently_selected:
                     # Remove the value
                     if self.remove_tag_from_file(file_path, category, value):
-                        current_values.remove(value)
+                        # Remove the matching value (case-insensitive)
+                        value_to_remove = None
+                        for v in current_values:
+                            if v.strip().lower() == value.strip().lower():
+                                value_to_remove = v
+                                break
+                        if value_to_remove:
+                            current_values.remove(value_to_remove)
                         self.console.print(f"[green]Removed: {category} = {value}[/green]")
                     else:
                         self.console.print(f"[red]Failed to remove: {category} = {value}[/red]")
@@ -432,6 +552,20 @@ class Tag:
                 # Brief pause to show the message
                 import time
                 time.sleep(0.5)
+            elif key.lower() == 'd':
+                # Delete entire category
+                if current_values:
+                    if self.remove_tag_from_file(file_path, category):
+                        current_values.clear()
+                        self.console.print(f"[green]Deleted entire category: {category}[/green]")
+                    else:
+                        self.console.print(f"[red]Failed to delete category: {category}[/red]")
+                else:
+                    self.console.print(f"[yellow]Category '{category}' is already empty[/yellow]")
+                
+                # Brief pause to show the message
+                import time
+                time.sleep(0.5)
             elif key == 'enter':
                 # Save and go back
                 break
@@ -440,7 +574,7 @@ class Tag:
         """Enhanced interactive tag editing with arrow key navigation"""
         categories = list(self.schema.keys())
         if not categories:
-            self.console.print("[red]No tag categories found in schema![/red]")
+            self.console.print("[red]No tag categories found in schema! Try running `djroid tag-schema` to create a schema.[/red]")
             return
         
         selected_category_index = 0
@@ -448,12 +582,29 @@ class Tag:
         while True:
             self.console.clear()
             self.display_file_info(file_path)
-            self.display_categories(categories, selected_category_index)
+            
+            # Show main navigation options
+            self.console.print("\n[bold cyan]Main Options:[/bold cyan]")
+            self.console.print("Use ↑/↓ to navigate, Enter/→ to select, q to quit")
+            
+            # Show metadata option
+            self.console.print("  (m) - Edit Metadata (including Rekordbox Comment)")
+            
+            # Show tag categories
+            self.console.print("\n[bold cyan]Tag Categories:[/bold cyan]")
+            for i, category in enumerate(categories):
+                if i == selected_category_index:
+                    self.console.print(f"  [bold green]▶ {category}[/bold green]")
+                else:
+                    self.console.print(f"    {category}")
             
             key = self.get_key_press()
             
             if key.lower() == 'q':
                 break
+            elif key.lower() == 'm':
+                # Edit metadata (including Rekordbox comment)
+                self.edit_metadata_enhanced(file_path)
             elif key == 'up':
                 selected_category_index = max(0, selected_category_index - 1)
             elif key == 'down':
@@ -468,6 +619,8 @@ class Tag:
         if not file_path.exists():
             self.console.print(f"[red]File not found: {file_path}[/red]")
             return
+        
+        self.current_file = file_path
         
         self.console.print(f"[green]Tagging file: {file_path.name}[/green]")
         self.edit_file_tags_enhanced(file_path)
@@ -513,3 +666,256 @@ class Tag:
                 self.tag_single_file(selected_file)
         
         self.console.print("[green]Tagging session completed![/green]")
+    
+    def set_rekordbox_comment(self, file_path: Path, comment: str) -> bool:
+        """Set the Rekordbox comment field (COMM tag)"""
+        try:
+            audio = File(str(file_path))
+            
+            if audio is None:
+                return False
+            
+            # Ensure tags exist
+            if not hasattr(audio, 'tags') or audio.tags is None:
+                if file_path.suffix.lower() == '.mp3':
+                    audio.tags = ID3()
+                else:
+                    audio.add_tags()
+            
+            # Import COMM for creating the comment tag
+            from mutagen.id3 import COMM
+            
+            # Create the Rekordbox comment tag
+            comm_tag = COMM(encoding=3, lang="eng", desc="", text=comment)
+            
+            # Remove any existing COMM tags with the same parameters
+            if hasattr(audio.tags, 'getall'):
+                existing_comms = audio.tags.getall("COMM")
+                for existing_comm in existing_comms:
+                    if hasattr(existing_comm, 'lang') and hasattr(existing_comm, 'desc'):
+                        if existing_comm.lang == "eng" and existing_comm.desc == "":
+                            audio.tags.delall("COMM")
+                            break
+            
+            # Add the new comment tag
+            if hasattr(audio.tags, 'add'):
+                audio.tags.add(comm_tag)
+            else:
+                # For formats that don't support add method
+                audio.tags["COMM"] = comm_tag
+            
+            # Save the file
+            audio.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to set Rekordbox comment on {file_path}: {e}")
+            return False
+    
+    def get_rekordbox_comment(self, file_path: Path) -> Optional[str]:
+        """Get the Rekordbox comment field (COMM tag)"""
+        try:
+            audio = File(str(file_path))
+            
+            if audio is None or not hasattr(audio, 'tags') or audio.tags is None:
+                return None
+            
+            if hasattr(audio.tags, 'getall'):
+                for comm in audio.tags.getall("COMM"):
+                    if hasattr(comm, 'lang') and hasattr(comm, 'desc') and hasattr(comm, 'text'):
+                        if comm.lang == "eng" and comm.desc == "":
+                            return str(comm.text[0])
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Could not read Rekordbox comment from {file_path}: {e}")
+            return None
+    
+    def edit_rekordbox_comment(self, file_path: Path) -> None:
+        """Edit the Rekordbox comment field"""
+        current_comment = self.get_rekordbox_comment(file_path) or ""
+        
+        self.console.print(f"\n[bold yellow]Rekordbox Comment[/bold yellow]")
+        self.console.print("This comment will be visible in Rekordbox")
+        
+        if current_comment:
+            self.console.print(f"Current comment: {current_comment}")
+        
+        new_comment = Prompt.ask("Enter new comment (or press Enter to clear)", default="")
+        
+        if new_comment != current_comment:
+            if self.set_rekordbox_comment(file_path, new_comment):
+                if new_comment:
+                    self.console.print(f"[green]Comment updated: {new_comment}[/green]")
+                else:
+                    self.console.print("[green]Comment cleared[/green]")
+            else:
+                self.console.print("[red]Failed to update comment[/red]")
+        
+        # Brief pause to show the message
+        import time
+        time.sleep(1)
+    
+    def get_metadata_fields(self) -> List[str]:
+        """Get the list of metadata fields we can edit"""
+        return ['title', 'artist', 'album', 'date', 'genre', 'bpm', 'key', 'rekordbox_comment']
+    
+    def display_metadata_fields(self, fields: List[str], selected_index: int) -> None:
+        """Display metadata fields with arrow key navigation"""
+        self.console.print("\n[bold cyan]Metadata Fields:[/bold cyan]")
+        self.console.print("Use ↑/↓ to navigate, Enter/→ to edit, q to quit")
+        
+        for i, field in enumerate(fields):
+            if i == selected_index:
+                if field == 'rekordbox_comment':
+                    self.console.print(f"  [bold green]▶ [yellow]Rekordbox Comment[/yellow][/bold green]")
+                else:
+                    self.console.print(f"  [bold green]▶ {field.title()}[/bold green]")
+            else:
+                if field == 'rekordbox_comment':
+                    self.console.print(f"    [yellow]Rekordbox Comment[/yellow]")
+                else:
+                    self.console.print(f"    {field.title()}")
+    
+    def set_metadata_field(self, file_path: Path, field: str, value: str) -> bool:
+        """Set a metadata field in a music file"""
+        try:
+            audio = File(str(file_path))
+            
+            if audio is None:
+                return False
+            
+            # Ensure tags exist
+            if not hasattr(audio, 'tags') or audio.tags is None:
+                if file_path.suffix.lower() == '.mp3':
+                    audio.tags = ID3()
+                else:
+                    audio.add_tags()
+            
+            # Map field names to tag keys
+            field_mappings = {
+                'title': 'TIT2',
+                'artist': 'TPE1', 
+                'album': 'TALB',
+                'date': 'TDRC',
+                'genre': 'TCON',
+                'bpm': 'TBPM',
+                'key': 'TKEY'
+            }
+            
+            tag_key = field_mappings.get(field)
+            if not tag_key:
+                return False
+            
+            # Import the appropriate tag class
+            from mutagen.id3 import TIT2, TPE1, TALB, TDRC, TCON, TBPM, TKEY
+            
+            tag_classes = {
+                'TIT2': TIT2,
+                'TPE1': TPE1,
+                'TALB': TALB,
+                'TDRC': TDRC,
+                'TCON': TCON,
+                'TBPM': TBPM,
+                'TKEY': TKEY
+            }
+            
+            tag_class = tag_classes.get(tag_key)
+            if not tag_class:
+                return False
+            
+            # Create the tag
+            tag = tag_class(encoding=3, text=value)
+            
+            # Add or update the tag
+            if hasattr(audio.tags, 'add'):
+                # Remove existing tag first
+                if hasattr(audio.tags, 'delall'):
+                    audio.tags.delall(tag_key)
+                audio.tags.add(tag)
+            else:
+                # For formats that don't support add method
+                audio.tags[tag_key] = tag
+            
+            # Save the file
+            audio.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to set metadata field {field} on {file_path}: {e}")
+            return False
+    
+    def edit_metadata_field(self, file_path: Path, field: str) -> None:
+        """Edit a specific metadata field"""
+        if field == 'rekordbox_comment':
+            # Handle Rekordbox comment editing
+            current_comment = self.get_rekordbox_comment(file_path) or ""
+            
+            self.console.print(f"\n[bold yellow]Edit Rekordbox Comment[/bold yellow]")
+            self.console.print("This comment will be visible in Rekordbox")
+            
+            if current_comment:
+                self.console.print(f"Current comment: {current_comment}")
+            
+            new_comment = Prompt.ask("Enter new comment (or press Enter to clear)", default="")
+            
+            if new_comment != current_comment:
+                if self.set_rekordbox_comment(file_path, new_comment):
+                    if new_comment:
+                        self.console.print(f"[green]Comment updated: {new_comment}[/green]")
+                    else:
+                        self.console.print("[green]Comment cleared[/green]")
+                else:
+                    self.console.print("[red]Failed to update comment[/red]")
+        else:
+            # Handle regular metadata fields
+            current_metadata = self.get_audio_metadata(file_path)
+            current_value = current_metadata.get(field, "")
+            
+            self.console.print(f"\n[bold green]Edit {field.title()}[/bold green]")
+            
+            if current_value:
+                self.console.print(f"Current value: {current_value}")
+            
+            new_value = Prompt.ask(f"Enter new {field} (or press Enter to clear)", default="")
+            
+            if new_value != current_value:
+                if self.set_metadata_field(file_path, field, new_value):
+                    if new_value:
+                        self.console.print(f"[green]{field.title()} updated: {new_value}[/green]")
+                    else:
+                        self.console.print(f"[green]{field.title()} cleared[/green]")
+                else:
+                    self.console.print(f"[red]Failed to update {field}[/red]")
+        
+        # Brief pause to show the message
+        import time
+        time.sleep(1)
+    
+    def edit_metadata_enhanced(self, file_path: Path) -> None:
+        """Enhanced interactive metadata editing with arrow key navigation"""
+        fields = self.get_metadata_fields()
+        if not fields:
+            self.console.print("[red]No metadata fields available![/red]")
+            return
+        
+        selected_field_index = 0
+        
+        while True:
+            self.console.clear()
+            self.display_file_info(file_path)
+            self.display_metadata_fields(fields, selected_field_index)
+            
+            key = self.get_key_press()
+            
+            if key.lower() == 'q':
+                break
+            elif key == 'up':
+                selected_field_index = max(0, selected_field_index - 1)
+            elif key == 'down':
+                selected_field_index = min(len(fields) - 1, selected_field_index + 1)
+            elif key in ['enter', 'right']:
+                # Edit the selected field
+                selected_field = fields[selected_field_index]
+                self.edit_metadata_field(file_path, selected_field)
