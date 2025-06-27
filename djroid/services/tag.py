@@ -415,7 +415,7 @@ class Tag:
         """Display values with checkbox-style selection"""
         self.console.print(f"\n[bold green]Values for '{category}':[/bold green]")
         self.console.print("Use ↑/↓ to navigate, Space to toggle, Enter to save, ← to go back")
-        self.console.print("Press 'd' to delete entire category")
+        self.console.print("Press 'd' to delete entire category, 'a' to add new value")
         
         # Create a set of normalized selected values for case-insensitive comparison
         selected_normalized = {v.strip().lower() for v in selected_values if v.strip()}
@@ -552,23 +552,112 @@ class Tag:
                 # Brief pause to show the message
                 import time
                 time.sleep(0.5)
+            elif key.lower() == 'a':
+                # Add new value to category
+                self.add_new_value_to_category(file_path, category, values, current_values)
             elif key.lower() == 'd':
-                # Delete entire category
+                # Delete entire category with confirmation
                 if current_values:
-                    if self.remove_tag_from_file(file_path, category):
-                        current_values.clear()
-                        self.console.print(f"[green]Deleted entire category: {category}[/green]")
+                    self.console.print(f"\n[bold red]Delete entire category '{category}'?[/bold red]")
+                    self.console.print(f"This will remove all values: {', '.join(current_values)}")
+                    self.console.print("This action cannot be undone.")
+                    
+                    confirm = input("Are you sure? (y/n): ").strip().lower()
+                    
+                    if confirm in ['y', 'yes']:
+                        if self.remove_tag_from_file(file_path, category):
+                            current_values.clear()
+                            self.console.print(f"[green]Deleted entire category: {category}[/green]")
+                        else:
+                            self.console.print(f"[red]Failed to delete category: {category}[/red]")
                     else:
-                        self.console.print(f"[red]Failed to delete category: {category}[/red]")
+                        self.console.print("[yellow]Category deletion cancelled.[/yellow]")
                 else:
                     self.console.print(f"[yellow]Category '{category}' is already empty[/yellow]")
                 
                 # Brief pause to show the message
                 import time
-                time.sleep(0.5)
+                time.sleep(1)
             elif key == 'enter':
                 # Save and go back
                 break
+    
+    def add_new_value_to_category(self, file_path: Path, category: str, values: List[str], current_values: set) -> None:
+        """Add a new value to a category on the fly"""
+        self.console.print(f"\n[bold cyan]Add New Value to '{category}'[/bold cyan]")
+        self.console.print("Enter a new value for this category:")
+        
+        # Get user input for the new value
+        new_value = input("New value: ").strip()
+        
+        if not new_value:
+            self.console.print("[yellow]No value entered. Cancelled.[/yellow]")
+            import time
+            time.sleep(1)
+            return
+        
+        # Check if value already exists in schema (case-insensitive)
+        if new_value.lower() in [v.lower() for v in values]:
+            self.console.print(f"[yellow]Value '{new_value}' already exists in the schema![/yellow]")
+            import time
+            time.sleep(1)
+            return
+        
+        # Confirm with user
+        self.console.print(f"\n[bold]Add '{new_value}' to category '{category}'?[/bold]")
+        self.console.print("This will:")
+        self.console.print(f"  1. Add '{new_value}' to the schema for '{category}'")
+        self.console.print(f"  2. Add '{new_value}' to this file's tags")
+        
+        confirm = input("Continue? (y/n): ").strip().lower()
+        
+        if confirm not in ['y', 'yes']:
+            self.console.print("[yellow]Cancelled.[/yellow]")
+            import time
+            time.sleep(1)
+            return
+        
+        # Add to schema first
+        if self.add_value_to_schema(category, new_value):
+            # Add to file
+            if self.add_tag_to_file(file_path, category, new_value):
+                # Update the current values set (don't modify the values list directly)
+                current_values.add(new_value)
+                self.console.print(f"[green]Successfully added '{new_value}' to '{category}'![/green]")
+            else:
+                self.console.print(f"[red]Failed to add '{new_value}' to file, but it was added to schema.[/red]")
+        else:
+            self.console.print(f"[red]Failed to add '{new_value}' to schema.[/red]")
+        
+        # Brief pause to show the message
+        import time
+        time.sleep(1)
+    
+    def add_value_to_schema(self, category: str, value: str) -> bool:
+        """Add a new value to the schema for a category"""
+        try:
+            if category not in self.schema:
+                self.schema[category] = []
+            
+            # Check if value already exists (case-insensitive)
+            if value.strip().lower() in [v.strip().lower() for v in self.schema[category]]:
+                logger.info(f"Value '{value}' already exists in schema for category '{category}'")
+                return True  # Not an error, just already exists
+            
+            # Add the new value to the schema
+            self.schema[category].append(value)
+            
+            # Save the updated schema
+            self.schema_file.parent.mkdir(exist_ok=True)
+            with open(self.schema_file, 'w') as f:
+                json.dump(self.schema, f, indent=2)
+            
+            logger.info(f"Added value '{value}' to schema for category '{category}'")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to add value to schema: {e}")
+            return False
     
     def edit_file_tags_enhanced(self, file_path: Path) -> None:
         """Enhanced interactive tag editing with arrow key navigation"""
@@ -619,8 +708,6 @@ class Tag:
         if not file_path.exists():
             self.console.print(f"[red]File not found: {file_path}[/red]")
             return
-        
-        self.current_file = file_path
         
         self.console.print(f"[green]Tagging file: {file_path.name}[/green]")
         self.edit_file_tags_enhanced(file_path)
