@@ -225,6 +225,9 @@ class Tag:
     def add_tag_to_file(self, file_path: Path, category: str, value: str) -> bool:
         """Add a value to a TXXX tag in a music file"""
         try:
+            # Initialize audio variable
+            audio = None
+            
             # Use specific file type handling for better compatibility
             if file_path.suffix.lower() == '.mp3':
                 audio = File(str(file_path))
@@ -243,6 +246,11 @@ class Tag:
                 # Ensure tags exist for other formats
                 if not hasattr(audio, 'tags') or audio.tags is None:
                     audio.add_tags()
+            
+            # Ensure audio is properly initialized
+            if audio is None:
+                logger.error(f"Failed to initialize audio object for {file_path}")
+                return False
             
             txxx_key = f'TXXX:{category.upper()}'
             
@@ -661,6 +669,9 @@ class Tag:
     
     def edit_file_tags_enhanced(self, file_path: Path) -> None:
         """Enhanced interactive tag editing with arrow key navigation"""
+        # Store the current file for migration reference
+        self.current_file = file_path
+        
         categories = list(self.schema.keys())
         if not categories:
             self.console.print("[red]No tag categories found in schema! Try running `djroid tag-schema` to create a schema.[/red]")
@@ -678,6 +689,8 @@ class Tag:
             
             # Show metadata option
             self.console.print("  (m) - Edit Metadata (including Rekordbox Comment)")
+            # Show migration option
+            self.console.print("  (v) - Migrate File to Different Directory")
             
             # Show tag categories
             self.console.print("\n[bold cyan]Tag Categories:[/bold cyan]")
@@ -694,6 +707,12 @@ class Tag:
             elif key.lower() == 'm':
                 # Edit metadata (including Rekordbox comment)
                 self.edit_metadata_enhanced(file_path)
+            elif key.lower() == 'v':
+                # Migrate file to different directory
+                self.migrate_file(file_path)
+                # Update file_path reference if migration was successful
+                if self.current_file != file_path:
+                    file_path = self.current_file
             elif key == 'up':
                 selected_category_index = max(0, selected_category_index - 1)
             elif key == 'down':
@@ -1006,3 +1025,132 @@ class Tag:
                 # Edit the selected field
                 selected_field = fields[selected_field_index]
                 self.edit_metadata_field(file_path, selected_field)
+    
+    def migrate_file(self, file_path: Path) -> None:
+        """Migrate a file to a chosen directory after tagging"""
+        self.console.print(f"\n[bold cyan]File Migration[/bold cyan]")
+        self.console.print(f"Current file: {file_path.name}")
+        self.console.print(f"Current location: {file_path.parent}")
+        
+        # Get destination path from user with tab completion
+        self.console.print("\n[bold yellow]Enter destination directory:[/bold yellow]")
+        self.console.print("(Use Tab for autocomplete, or type a relative/absolute path)")
+        
+        # Use readline for tab completion if available
+        try:
+            import readline
+            import glob
+            
+            def complete_path(text, state):
+                """Tab completion function for file paths"""
+                if not text:
+                    completions = ['.', '..', '~'] + [str(p.name) + '/' for p in Path('.').iterdir() if p.is_dir()]
+                else:
+                    # Handle tilde expansion
+                    if text.startswith('~'):
+                        text = str(Path.home()) + text[1:]
+                    
+                    # Find matching paths
+                    path = Path(text)
+                    if path.exists() and path.is_dir():
+                        # If it's a complete directory, show its contents
+                        completions = [str(path / p.name) + ('/' if p.is_dir() else '') for p in path.iterdir()]
+                    else:
+                        # Find partial matches
+                        parent = path.parent
+                        if not parent.exists():
+                            parent = Path('.')
+                        
+                        pattern = path.name + '*'
+                        completions = []
+                        for p in parent.glob(pattern):
+                            if p.is_dir():
+                                completions.append(str(p) + '/')
+                            else:
+                                completions.append(str(p))
+                
+                # Filter and return completions
+                filtered = [c for c in completions if c.startswith(text)]
+                return filtered[state] if state < len(filtered) else None
+            
+            readline.set_completer(complete_path)
+            readline.parse_and_bind('tab: complete')
+            
+        except ImportError:
+            self.console.print("[yellow]Tab completion not available on this system[/yellow]")
+        
+        # Get user input for destination
+        destination_input = input("Destination: ").strip()
+        
+        if not destination_input:
+            self.console.print("[yellow]Migration cancelled.[/yellow]")
+            return
+        
+        # Handle tilde expansion
+        if destination_input.startswith('~'):
+            destination_input = str(Path.home()) + destination_input[1:]
+        
+        # Convert to Path object
+        try:
+            destination_path = Path(destination_input).resolve()
+        except Exception as e:
+            self.console.print(f"[red]Invalid path: {e}[/red]")
+            return
+        
+        # Check if destination exists and is a directory
+        if not destination_path.exists():
+            # Ask if user wants to create the directory
+            self.console.print(f"\n[bold yellow]Directory '{destination_path}' does not exist.[/bold yellow]")
+            create_dir = input("Create it? (y/n): ").strip().lower()
+            
+            if create_dir in ['y', 'yes']:
+                try:
+                    destination_path.mkdir(parents=True, exist_ok=True)
+                    self.console.print(f"[green]Created directory: {destination_path}[/green]")
+                except Exception as e:
+                    self.console.print(f"[red]Failed to create directory: {e}[/red]")
+                    return
+            else:
+                self.console.print("[yellow]Migration cancelled.[/yellow]")
+                return
+        elif not destination_path.is_dir():
+            self.console.print(f"[red]'{destination_path}' is not a directory![/red]")
+            return
+        
+        # Calculate the new file path
+        new_file_path = destination_path / file_path.name
+        
+        # Check if file already exists at destination
+        if new_file_path.exists():
+            self.console.print(f"\n[bold red]Warning: File already exists at destination![/bold red]")
+            self.console.print(f"Destination: {new_file_path}")
+            
+            overwrite = input("Overwrite existing file? (y/n): ").strip().lower()
+            if overwrite not in ['y', 'yes']:
+                self.console.print("[yellow]Migration cancelled.[/yellow]")
+                return
+        
+        # Show migration summary and confirm
+        self.console.print(f"\n[bold cyan]Migration Summary:[/bold cyan]")
+        self.console.print(f"From: {file_path}")
+        self.console.print(f"To:   {new_file_path}")
+        
+        confirm = input("\nAre you sure you want to move this file? (y/n): ").strip().lower()
+        
+        if confirm not in ['y', 'yes']:
+            self.console.print("[yellow]Migration cancelled.[/yellow]")
+            return
+        
+        # Perform the migration
+        try:
+            import shutil
+            shutil.move(str(file_path), str(new_file_path))
+            self.console.print(f"[green]Successfully migrated file to: {new_file_path}[/green]")
+            
+            # Update the current file path reference if this is the current file being tagged
+            if self.current_file == file_path:
+                self.current_file = new_file_path
+                
+        except Exception as e:
+            self.console.print(f"[red]Failed to migrate file: {e}[/red]")
+            logger.error(f"Failed to migrate {file_path} to {new_file_path}: {e}")
