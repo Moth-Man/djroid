@@ -32,13 +32,27 @@ class TagSchema:
         """Display schema as a beautiful table"""
         table = Table(title=title, box=box.ROUNDED, show_lines=True)
         table.add_column("Category", style="cyan", no_wrap=True)
-        table.add_column("Values", style="green")
+        table.add_column("Type", style="blue", no_wrap=True)
+        table.add_column("Values/Config", style="green")
         table.add_column("Count", style="yellow", justify="center")
         
-        for category, values in schema.items():
-            values_str = ", ".join(values) if values else "(empty)"
-            count = len(values)
-            table.add_row(category, values_str, str(count))
+        for category, config in schema.items():
+            if isinstance(config, dict) and config.get("type") == "rating":
+                # Rating category
+                max_rating = config.get("max_rating", "unknown")
+                values_str = f"1-{max_rating} (rating scale)"
+                count = max_rating
+                table.add_row(category, "rating", values_str, str(count))
+            elif isinstance(config, list):
+                # Regular category
+                values_str = ", ".join(config) if config else "(empty)"
+                count = len(config)
+                table.add_row(category, "multi-value", values_str, str(count))
+            else:
+                # Unknown format
+                values_str = str(config)
+                count = "?"
+                table.add_row(category, "unknown", values_str, str(count))
         
         self.console.print(table)
     
@@ -198,7 +212,51 @@ class TagSchema:
             self.console.print(f"[green]Removed category: {category_name}[/green]")
         
         return schema
-    
+
+    def add_rating_category(self, schema: Dict[str, List[str]]) -> Dict[str, List[str]]:
+        """Add a rating category with max_rating"""
+        self.console.print("\n[bold cyan]Adding Rating Category[/bold cyan]")
+        
+        while True:
+            category_name = Prompt.ask("Enter rating category name (e.g., 'energy', 'vibe')").strip()
+            if not category_name:
+                self.console.print("[red]Category name cannot be empty![/red]")
+                continue
+            
+            if category_name in schema:
+                self.console.print(f"[red]Category '{category_name}' already exists![/red]")
+                continue
+            
+            break
+        
+        # Get the max rating
+        while True:
+            try:
+                max_rating = IntPrompt.ask("Enter maximum rating value (minimum is 1)", default=5)
+                
+                if max_rating < 1:
+                    self.console.print("[red]Maximum rating must be at least 1![/red]")
+                    continue
+                
+                if max_rating > 20:
+                    self.console.print("[yellow]Warning: Large rating range may be unwieldy[/yellow]")
+                    if not Confirm.ask("Continue anyway?"):
+                        continue
+                
+                break
+            except ValueError:
+                self.console.print("[red]Please enter a valid number![/red]")
+        
+        # Create rating category with the specified JSON structure
+        schema[category_name] = {
+            "type": "rating",
+            "max_rating": max_rating
+        }
+        
+        self.console.print(f"[green]Added rating category '{category_name}' with max rating {max_rating}[/green]")
+        
+        return schema
+
     def setup_schema(self):
         """Main method to setup the tag schema interactively"""
         self.console.print(Panel.fit(
@@ -231,7 +289,7 @@ class TagSchema:
             
             action = Prompt.ask(
                 "\nChoose an action",
-                choices=["add", "modify", "remove", "finish"],
+                choices=["add", "add_rating", "modify", "remove", "finish"],
                 default="finish"
             )
             
@@ -239,6 +297,8 @@ class TagSchema:
                 break
             elif action == "add":
                 self.schema = self.add_category(self.schema)
+            elif action == "add_rating":
+                self.schema = self.add_rating_category(self.schema)
             elif action == "modify":
                 self.schema = self.modify_category(self.schema)
             elif action == "remove":

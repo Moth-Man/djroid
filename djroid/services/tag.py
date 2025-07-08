@@ -495,9 +495,85 @@ class Tag:
                 # Fallback to simple input
                 return input()
     
+    def is_rating_category(self, category: str) -> bool:
+        """Check if a category is a rating category"""
+        if category in self.schema:
+            config = self.schema[category]
+            return isinstance(config, dict) and config.get("type") == "rating"
+        return False
+    
+    def get_rating_max(self, category: str) -> Optional[int]:
+        """Get the maximum rating value for a rating category"""
+        if self.is_rating_category(category):
+            config = self.schema[category]
+            return config.get("max_rating")
+        return None
+    
+    def set_rating_value(self, file_path: Path, category: str, value: str) -> bool:
+        """Set a rating value (replaces existing value)"""
+        try:
+            # Initialize audio variable
+            audio = None
+            
+            # Use specific file type handling for better compatibility
+            if file_path.suffix.lower() == '.mp3':
+                audio = File(str(file_path))
+                if audio is None:
+                    return False
+                
+                # Ensure tags exist for MP3
+                if not hasattr(audio, 'tags') or audio.tags is None:
+                    audio.tags = ID3()
+            else:
+                # For AIFF and other formats, use the generic File approach
+                audio = File(str(file_path))
+                if audio is None:
+                    return False
+                
+                # Ensure tags exist for other formats
+                if not hasattr(audio, 'tags') or audio.tags is None:
+                    audio.add_tags()
+            
+            # Ensure audio is properly initialized
+            if audio is None:
+                logger.error(f"Failed to initialize audio object for {file_path}")
+                return False
+            
+            txxx_key = f'TXXX:{category.upper()}'
+            
+            # For rating categories, we always replace the existing value
+            if file_path.suffix.lower() == '.mp3':
+                # MP3 files - remove all existing frames and add new one
+                if hasattr(audio.tags, 'delall'):
+                    audio.tags.delall(txxx_key)
+                audio.tags.add(TXXX(encoding=3, desc=category.upper(), text=value))
+            else:
+                # AIFF and other formats - replace the frame
+                audio.tags[txxx_key] = TXXX(encoding=3, desc=category.upper(), text=value)
+            
+            # Save the file
+            audio.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to set rating value on {file_path}: {e}")
+            return False
+
     def edit_category_values(self, file_path: Path, category: str) -> None:
         """Edit values for a specific category with checkbox-style selection"""
-        values = self.schema[category]
+        
+        # Check if this is a rating category
+        if self.is_rating_category(category):
+            self.edit_rating_category(file_path, category)
+            return
+        
+        # Regular category handling
+        config = self.schema[category]
+        if not isinstance(config, list):
+            self.console.print(f"[yellow]No values defined for category '{category}'[/yellow]")
+            return
+        
+        values = config
         if not values:
             self.console.print(f"[yellow]No values defined for category '{category}'[/yellow]")
             return
@@ -590,6 +666,77 @@ class Tag:
                 # Save and go back
                 break
     
+    def edit_rating_category(self, file_path: Path, category: str) -> None:
+        """Edit a rating category with numeric input"""
+        max_rating = self.get_rating_max(category)
+        if max_rating is None:
+            self.console.print(f"[red]Invalid rating category configuration for '{category}'[/red]")
+            return
+        
+        # Get current rating value
+        current_tags = self.get_file_tags(file_path)
+        current_rating = None
+        
+        # Try to get current rating
+        if category in current_tags:
+            current_values = current_tags[category]
+            if current_values:
+                try:
+                    current_rating = int(current_values[0])
+                except (ValueError, IndexError):
+                    pass
+        
+        while True:
+            self.console.clear()
+            self.display_file_info(file_path)
+            
+            self.console.print(f"\n[bold cyan]Rating Category: {category}[/bold cyan]")
+            self.console.print(f"Scale: 1 to {max_rating}")
+            
+            if current_rating:
+                self.console.print(f"Current rating: {current_rating}")
+            else:
+                self.console.print("Current rating: None")
+            
+            self.console.print("\nEnter a rating value (or 'q' to go back):")
+            
+            # Get user input
+            rating_input = input("Rating: ").strip()
+            
+            if rating_input.lower() == 'q':
+                break
+            
+            if not rating_input:
+                self.console.print("[yellow]Please enter a rating value.[/yellow]")
+                import time
+                time.sleep(1)
+                continue
+            
+            try:
+                rating = int(rating_input)
+                
+                if rating < 1 or rating > max_rating:
+                    self.console.print(f"[red]Rating must be between 1 and {max_rating}.[/red]")
+                    import time
+                    time.sleep(1)
+                    continue
+                
+                # Set the rating value
+                if self.set_rating_value(file_path, category, str(rating)):
+                    current_rating = rating
+                    self.console.print(f"[green]Rating updated: {category} = {rating}[/green]")
+                else:
+                    self.console.print(f"[red]Failed to update rating: {category} = {rating}[/red]")
+                
+                import time
+                time.sleep(1)
+                
+            except ValueError:
+                self.console.print("[red]Please enter a valid number.[/red]")
+                import time
+                time.sleep(1)
+                continue
+    
     def add_new_value_to_category(self, file_path: Path, category: str, values: List[str], current_values: set) -> None:
         """Add a new value to a category on the fly"""
         self.console.print(f"\n[bold cyan]Add New Value to '{category}'[/bold cyan]")
@@ -672,7 +819,12 @@ class Tag:
         # Store the current file for migration reference
         self.current_file = file_path
         
-        categories = list(self.schema.keys())
+        # Get categories, handling both regular and rating categories
+        categories = []
+        for category, config in self.schema.items():
+            if isinstance(config, list) or (isinstance(config, dict) and config.get("type") == "rating"):
+                categories.append(category)
+        
         if not categories:
             self.console.print("[red]No tag categories found in schema! Try running `djroid tag-schema` to create a schema.[/red]")
             return
@@ -695,10 +847,17 @@ class Tag:
             # Show tag categories
             self.console.print("\n[bold cyan]Tag Categories:[/bold cyan]")
             for i, category in enumerate(categories):
+                # Check if it's a rating category
+                is_rating = self.is_rating_category(category)
+                category_display = category
+                if is_rating:
+                    max_rating = self.get_rating_max(category)
+                    category_display = f"{category} (1-{max_rating})"
+                
                 if i == selected_category_index:
-                    self.console.print(f"  [bold green]▶ {category}[/bold green]")
+                    self.console.print(f"  [bold green]▶ {category_display}[/bold green]")
                 else:
-                    self.console.print(f"    {category}")
+                    self.console.print(f"    {category_display}")
             
             key = self.get_key_press()
             

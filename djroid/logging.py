@@ -10,9 +10,9 @@ def setup_logging(log_level: str = "INFO") -> None:
     Args:
         log_level: The logging level to use. Defaults to "INFO".
     """
-    # Create logs directory if it doesn't exist
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
+    # Create logs directory in user's home directory if it doesn't exist
+    log_dir = Path.home() / '.djroid' / 'logs'
+    log_dir.mkdir(parents=True, exist_ok=True)
     
     # Configure root logger
     root_logger = logging.getLogger()
