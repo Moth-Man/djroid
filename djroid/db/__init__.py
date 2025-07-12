@@ -1,6 +1,5 @@
-from .session import Base, engine, get_db
+from .session import Base, engine, get_db, init_database, check_database_connection
 from .models.song import Song
-from .models.tag import Tag
 from ..logging import get_logger
 
 logger = get_logger(__name__)
@@ -9,8 +8,12 @@ logger = get_logger(__name__)
 def init_db():
     logger.info("Initializing database tables")
     try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Successfully initialized database tables")
+        success = init_database()
+        if success:
+            logger.info("Successfully initialized database tables")
+        else:
+            logger.error("Failed to initialize database")
+            raise Exception("Database initialization failed")
     except Exception as e:
         logger.error(f"Failed to initialize database: {str(e)}", exc_info=True)
         raise 
