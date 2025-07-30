@@ -12,9 +12,9 @@ The djroid cli tool entry point begins with the `cli.py` file, located at `/User
   - Tag Schema click decorator is created
   - Tag Schema service is instantiated
   - Tag Schema .setup_schema() function is called to begin tag schema creation logic
-  - 
 
 # Scan
+  - A user will 
 
 # Crate
 

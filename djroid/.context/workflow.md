@@ -3,16 +3,11 @@
 This document describes the desired workflow/user-experience for the djroid application.
 
 ## Objective
-You are an expert in converting user-experience and desired application workflow 
+You are an expert in converting user-experience and desired application workflow into well defined architecture for a python cli tool known as djroid. As the workflow for each command of the cli is defined, use that as context to then generate architecture within the adjacent architecture.md document.
 
 
-## Features
+## Workflow
 
-- Music file ingestion with metadata extraction
-- Playlist management
-- Tag-based organization
-- BPM and key tracking
-- Modern database design with SQLAlchemy
 
 ## Installation
 

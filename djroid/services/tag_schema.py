@@ -29,7 +29,7 @@ class TagSchema:
             json.dump(schema, f, indent=2)
     
     def display_schema_table(self, schema: Dict[str, List[str]], title: str = "Current Tag Schema"):
-        """Display schema as a beautiful table"""
+        """Display schema as a table"""
         table = Table(title=title, box=box.ROUNDED, show_lines=True)
         table.add_column("Category", style="cyan", no_wrap=True)
         table.add_column("Type", style="blue", no_wrap=True)

@@ -1,14 +1,11 @@
 # DJroid Backlog
 
-A list of features and bugs on the roadmap for the djroid application.
+A list of desired features and existing bugs on the roadmap for the djroid application.
 
 ## Features
 
-- Music file ingestion with metadata extraction
-- Playlist management
-- Tag-based organization
-- BPM and key tracking
-- Modern database design with SQLAlchemy
+- Add wav to aiff/mp3 conversion when encountering a wav file
 
 ## Bugs
 
+- Fix check/minus bug where once you toggle a tag schema catagory value, it toggles to check, you exit the category, step back into that category and the value is an x again when it should be a check
