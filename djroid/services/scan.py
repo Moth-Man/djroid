@@ -33,8 +33,8 @@ class Scan:
         
         return sorted(music_files)
     
-    def get_audio_metadata(self, file_path: Path) -> Dict[str, Any]:
-        """Get basic audio metadata from a music file"""
+    def get_comprehensive_metadata(self, file_path: Path) -> Dict[str, Any]:
+        """Get comprehensive audio metadata from a music file"""
         metadata = {}
         
         try:
@@ -47,15 +47,25 @@ class Scan:
             if not hasattr(audio, 'tags') or audio.tags is None:
                 return metadata
             
-            # Common metadata fields with their tag keys
+            # Comprehensive metadata fields with their tag keys
             tag_mappings = {
                 'title': ['TIT2', 'TITLE', 'title'],
                 'artist': ['TPE1', 'ARTIST', 'artist'],
                 'album': ['TALB', 'ALBUM', 'album'],
-                'date': ['TDRC', 'DATE', 'date'],
                 'genre': ['TCON', 'GENRE', 'genre'],
                 'bpm': ['TBPM', 'BPM', 'bpm'],
-                'key': ['TKEY', 'KEY', 'key']
+                'key': ['TKEY', 'KEY', 'key'],
+                'track': ['TRCK', 'TRACK', 'track'],
+                'isrc': ['TSRC', 'ISRC', 'isrc'],
+                'publisher': ['TPUB', 'PUBLISHER', 'publisher'],
+                'encoded_by': ['TENC', 'ENCODED_BY', 'encoded_by'],
+                'file_url': ['WXXX:URL', 'URL', 'file_url'],
+                'publisher_url': ['WXXX:PUBLISHER_URL', 'PUBLISHER_URL', 'publisher_url'],
+                'comment': ['COMM', 'COMMENT', 'comment'],
+                'recording_time': ['TDRC', 'RECORDING_TIME', 'recording_time'],
+                'release_time': ['TDRL', 'RELEASE_TIME', 'release_time'],
+                'original_release_time': ['TDOR', 'ORIGINAL_RELEASE_TIME', 'original_release_time'],
+                'date_time_original': ['TDTG', 'DATE_TIME_ORIGINAL', 'date_time_original']
             }
             
             for field, possible_keys in tag_mappings.items():
@@ -81,6 +91,17 @@ class Scan:
                     except (KeyError, AttributeError, IndexError):
                         continue
             
+            # Special handling for Rekordbox comment (COMM tag)
+            try:
+                if hasattr(audio.tags, 'getall'):
+                    for comm in audio.tags.getall("COMM"):
+                        if hasattr(comm, 'lang') and hasattr(comm, 'desc') and hasattr(comm, 'text'):
+                            if comm.lang == "eng" and comm.desc == "":
+                                metadata['comment'] = str(comm.text[0])
+                                break
+            except (KeyError, AttributeError, IndexError):
+                pass
+            
             # Convert BPM to float if it exists
             if 'bpm' in metadata:
                 try:
@@ -88,52 +109,27 @@ class Scan:
                 except (ValueError, TypeError):
                     metadata['bpm'] = None
             
+            # Extract year from various date fields
+            for date_field in ['recording_time', 'release_time', 'original_release_time', 'date_time_original']:
+                if date_field in metadata:
+                    try:
+                        # Try to extract year from date string
+                        year_str = metadata[date_field]
+                        if year_str and len(year_str) >= 4:
+                            year = int(year_str[:4])
+                            metadata['year'] = year
+                            break
+                    except (ValueError, TypeError):
+                        continue
+            
+            # Add file type information
+            metadata['file_type'] = file_path.suffix.lower()
+            metadata['file_size_mb'] = round(file_path.stat().st_size / (1024 * 1024), 2)
+            
         except Exception as e:
             logger.warning(f"Could not read metadata from {file_path}: {e}")
         
         return metadata
-    
-    def get_file_tags(self, file_path: Path) -> Dict[str, List[str]]:
-        """Get existing TXXX tags from a music file"""
-        tags = {}
-        
-        try:
-            audio = File(str(file_path))
-            
-            if audio is None:
-                return tags
-            
-            # Handle MP3 files
-            if file_path.suffix.lower() == '.mp3' and hasattr(audio, 'tags') and audio.tags:
-                if hasattr(audio.tags, 'getall'):
-                    for key in audio.tags.keys():
-                        if key.startswith('TXXX:'):
-                            category = key[5:]  # Remove 'TXXX:' prefix
-                            values = audio.tags.getall(key)
-                            tags[category] = [str(v) for v in values]
-            
-            # Handle AIFF and other files
-            elif hasattr(audio, 'tags') and audio.tags:
-                for key, value in audio.tags.items():
-                    if key.startswith('TXXX:'):
-                        category = key[5:]
-                        if hasattr(value, 'text'):
-                            # Handle comma-separated values
-                            text_values = value.text
-                            if isinstance(text_values, list):
-                                # If it's already a list, use as is
-                                tags[category] = [str(v) for v in text_values]
-                            else:
-                                # If it's a string, split by commas
-                                tags[category] = [v.strip() for v in str(text_values).split(',')]
-                        else:
-                            # Fallback
-                            tags[category] = [str(value)]
-                        
-        except Exception as e:
-            logger.warning(f"Could not read tags from {file_path}: {e}")
-        
-        return tags
     
     def build_tags_json(self, file_path: Path, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Build a tags JSON object based on the file's TXXX tags and the user's schema"""
@@ -145,8 +141,8 @@ class Scan:
         try:
             song_dao = SongDAO(db_session)
             
-            # Get basic metadata
-            metadata = self.get_audio_metadata(file_path)
+            # Get comprehensive metadata
+            metadata = self.get_comprehensive_metadata(file_path)
             
             # Get tags JSON using the shared function
             tags_json = self.tag_service.build_tags_json_from_file(file_path)
@@ -158,9 +154,22 @@ class Scan:
                 artist=metadata.get('artist'),
                 album=metadata.get('album'),
                 genre=metadata.get('genre'),
-                date=metadata.get('date'),
+                year=metadata.get('year'),
                 bpm=metadata.get('bpm'),
                 key=metadata.get('key'),
+                track=metadata.get('track'),
+                isrc=metadata.get('isrc'),
+                publisher=metadata.get('publisher'),
+                encoded_by=metadata.get('encoded_by'),
+                file_url=metadata.get('file_url'),
+                publisher_url=metadata.get('publisher_url'),
+                comment=metadata.get('comment'),
+                recording_time=metadata.get('recording_time'),
+                release_time=metadata.get('release_time'),
+                original_release_time=metadata.get('original_release_time'),
+                date_time_original=metadata.get('date_time_original'),
+                file_type=metadata.get('file_type'),
+                file_size_mb=metadata.get('file_size_mb'),
                 tags=tags_json if tags_json else None
             )
             

@@ -102,11 +102,19 @@ class Tag:
                             # Handle comma-separated values
                             text_values = value.text
                             if isinstance(text_values, list):
-                                # If it's already a list, use as is
-                                tags[category] = [str(v) for v in text_values]
+                                # If it's already a list, split each item by commas
+                                all_values = []
+                                for item in text_values:
+                                    if isinstance(item, str):
+                                        # Split by commas and strip whitespace
+                                        split_values = [v.strip() for v in item.split(',') if v.strip()]
+                                        all_values.extend(split_values)
+                                    else:
+                                        all_values.append(str(item))
+                                tags[category] = all_values
                             else:
-                                # If it's a string, split by commas
-                                tags[category] = [v.strip() for v in str(text_values).split(',')]
+                                # If it's a string, split by commas and strip whitespace
+                                tags[category] = [v.strip() for v in str(text_values).split(',') if v.strip()]
                         else:
                             # Fallback
                             tags[category] = [str(value)]
