@@ -21,20 +21,28 @@ def cli():
     pass
 
 @cli.command()
-@click.option('--prompt', required=True, help='The prompt to generate the crate from')
-@click.option('--name', required=True, help='Name of the crate')
-@click.option('--file-path', required=True, type=click.Path(), help='Path where the crate will be created')
-def crate(prompt: str, name: str, file_path: str):
-    """Create a crate."""
-    logger.info(f"Creating crate '{name}' with prompt: {prompt}")
+@click.option('--path', type=click.Path(), help='Output directory for generated playlists')
+@click.option('--usb', is_flag=True, help='Generate Rekordbox-compatible XML playlist')
+@click.argument('prompt', required=True)
+def crate(path: str, usb: bool, prompt: str):
+    """Generate a curated playlist based on user prompt."""
+    logger.info(f"Creating crate with prompt: {prompt}")
     try:
-        crate_service = Crate(name, file_path, prompt)
-        crate_service.generate_crate()
-        logger.info(f"Successfully created crate: {name}")
-        click.echo("Crate created successfully.")
+        crate_service = Crate()
+        result = crate_service.generate_crate(prompt=prompt, output_path=path, usb_format=usb)
+        
+        if result["success"]:
+            logger.info(f"Successfully created crate: {result['playlist_path']}")
+            click.echo(f"✅ Crate generated successfully!")
+            click.echo(f"📁 Output: {result['playlist_path']}")
+            click.echo(f"🎵 Songs: {result['song_count']} ({result['duration']})")
+        else:
+            logger.error(f"Failed to create crate: {result['error']}")
+            click.echo(f"❌ Error creating crate: {result['error']}", err=True)
+            
     except Exception as e:
         logger.error(f"Failed to create crate: {str(e)}", exc_info=True)
-        click.echo(f"Error creating crate: {str(e)}", err=True)
+        click.echo(f"❌ Error creating crate: {str(e)}", err=True)
 
 @cli.command(name='tag-schema')
 def tag_schema():

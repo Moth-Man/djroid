@@ -20,6 +20,7 @@ class Song(Base):
     year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
     bpm: Mapped[Optional[float]] = mapped_column(Float, nullable=True, index=True)
     key: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    popularimeter: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
     
     # Additional metadata fields
     track: Mapped[Optional[str]] = mapped_column(String, nullable=True)

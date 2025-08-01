@@ -1,6 +1,7 @@
 from djroid.db.dao.base_dao import BaseDAO
 from djroid.db.models.song import Song
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import Optional, Dict, Any, List
 import uuid
 from pathlib import Path
@@ -39,7 +40,8 @@ class SongDAO(BaseDAO[Song]):
                    date_time_original: Optional[str] = None,
                    file_type: Optional[str] = None,
                    file_size_mb: Optional[float] = None,
-                   tags: Optional[Dict[str, Any]] = None) -> Song:
+                   tags: Optional[Dict[str, Any]] = None,
+                   popularimeter: Optional[int] = None) -> Song:
         """Create a new song record"""
         song = Song(
             filepath=filepath,
@@ -63,7 +65,8 @@ class SongDAO(BaseDAO[Song]):
             date_time_original=date_time_original,
             file_type=file_type,
             file_size_mb=file_size_mb,
-            tags=tags
+            tags=tags,
+            popularimeter=popularimeter
         )
         self.db.add(song)
         self.db.commit()
@@ -96,7 +99,8 @@ class SongDAO(BaseDAO[Song]):
                    date_time_original: Optional[str] = None,
                    file_type: Optional[str] = None,
                    file_size_mb: Optional[float] = None,
-                   tags: Optional[Dict[str, Any]] = None) -> Optional[Song]:
+                   tags: Optional[Dict[str, Any]] = None,
+                   popularimeter: Optional[int] = None) -> Optional[Song]:
         """Update an existing song record"""
         song = self.get_by_filepath(filepath)
         if not song:
@@ -145,6 +149,8 @@ class SongDAO(BaseDAO[Song]):
             song.file_size_mb = file_size_mb
         if tags is not None:
             song.tags = tags
+        if popularimeter is not None:
+            song.popularimeter = popularimeter
         
         self.db.add(song)
         self.db.commit()
@@ -173,7 +179,8 @@ class SongDAO(BaseDAO[Song]):
                             date_time_original: Optional[str] = None,
                             file_type: Optional[str] = None,
                             file_size_mb: Optional[float] = None,
-                            tags: Optional[Dict[str, Any]] = None) -> Song:
+                            tags: Optional[Dict[str, Any]] = None,
+                            popularimeter: Optional[int] = None) -> Song:
         """Create a new song or update existing one"""
         existing_song = self.get_by_filepath(filepath)
         if existing_song:
@@ -199,7 +206,8 @@ class SongDAO(BaseDAO[Song]):
                 date_time_original=date_time_original,
                 file_type=file_type,
                 file_size_mb=file_size_mb,
-                tags=tags
+                tags=tags,
+                popularimeter=popularimeter
             )
         else:
             return self.create_song(
@@ -224,7 +232,8 @@ class SongDAO(BaseDAO[Song]):
                 date_time_original=date_time_original,
                 file_type=file_type,
                 file_size_mb=file_size_mb,
-                tags=tags
+                tags=tags,
+                popularimeter=popularimeter
             )
 
     def delete_by_filepath(self, filepath: str) -> bool:
@@ -250,7 +259,10 @@ class SongDAO(BaseDAO[Song]):
                     year_min: Optional[int] = None,
                     year_max: Optional[int] = None,
                     isrc: Optional[str] = None,
-                    publisher: Optional[str] = None) -> List[Song]:
+                    publisher: Optional[str] = None,
+                    energy_min: Optional[int] = None,
+                    energy_max: Optional[int] = None,
+                    tags: Optional[Dict[str, Any]] = None) -> List[Song]:
         """Search songs by various criteria"""
         query = self.db.query(Song)
         
@@ -274,6 +286,21 @@ class SongDAO(BaseDAO[Song]):
             query = query.filter(Song.isrc == isrc)
         if publisher:
             query = query.filter(Song.publisher.ilike(f"%{publisher}%"))
+        if energy_min is not None:
+            query = query.filter(Song.popularimeter >= energy_min)
+        if energy_max is not None:
+            query = query.filter(Song.popularimeter <= energy_max)
+        if tags:
+            for tag_category, tag_value in tags.items():
+                if isinstance(tag_value, list):
+                    # Multiple values for a tag category
+                    conditions = []
+                    for value in tag_value:
+                        conditions.append(Song.tags[tag_category].astext.contains(value))
+                    query = query.filter(or_(*conditions))
+                else:
+                    # Single value for a tag category
+                    query = query.filter(Song.tags[tag_category].astext.contains(tag_value))
         
         return query.all()
 

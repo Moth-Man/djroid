@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+    <PRODUCT Name="DJroid" Version="1.0" Company="DJroid"/>
+    <COLLECTION Entries="3">
+        <TRACK TrackID="1" Name="Fuji Opener (feat. Alvin Risk) (Original Mix)" Artist="Skrillex, Alvin Risk" Album="Show Tracks" Genre="Trap / Future Bass" Kind="MP3 File" Size="29601300" TotalTime="210" Year="2019" AverageBpm="150.0" DateAdded="2024-01-01" BitRate="320" SampleRate="44100" Comments="Test comm for db." PlayCount="0" Rating="0" Location="file://localhost/Users/moth-man/Music/Wan_Shi_Tong_Test/Skrillex%2C%20Alvin%20Risk%20-%20Fuji%20Opener%20%28feat.%20Alvin%20Risk%29%20%28Original%20Mix%29.aiff" Tonality="G#maj"/>
+        <TRACK TrackID="2" Name="Big Bada Boom (Extended Mix)" Artist="Will Atkinson" Album="Big Bada Boom (Extended Mix)" Genre="Hard Dance / Hardcore / Neo Rave" Kind="MP3 File" Size="64592281" TotalTime="210" Year="2025" AverageBpm="155.0" DateAdded="2024-01-01" BitRate="320" SampleRate="44100" Comments="t comm..." PlayCount="0" Rating="0" Location="file://localhost/Users/moth-man/Music/Wan_Shi_Tong_Test/Will%20Atkinson%20-%20Big%20Bada%20Boom%20%28Extended%20Mix%29.aiff" Tonality="Gmaj"/>
+        <TRACK TrackID="3" Name="Pedro (W&amp;W Remix - Extended)" Artist="W&amp;W, Raffaella Carra, Agatino Romero, Jaxomy" Album="Pedro (W&amp;W Remix - Extended)" Genre="Mainstage" Kind="MP3 File" Size="37192990" TotalTime="210" Year="2024" AverageBpm="155.0" DateAdded="2024-01-01" BitRate="320" SampleRate="44100" Comments="" PlayCount="0" Rating="0" Location="file://localhost/Users/moth-man/Music/Wan_Shi_Tong_Test/W%26W%2C%20Raffaella%20Carra%2C%20Agatino%20Romero%2C%20Jaxomy%20-%20Pedro%20%28W%26W%20Remix%20-%20Extended%29.aiff" Tonality="Emaj"/>
+    </COLLECTION>
+    <PLAYLISTS>
+        <NODE Type="0" Name="ROOT" Count="1">
+            <NODE Type="1" Name="give_me_3_songs_that_are_of_th_20250801_0907" Entries="3" KeyType="0">
+                <TRACK Key="1"/>
+                <TRACK Key="2"/>
+                <TRACK Key="3"/>
+            </NODE>
+        </NODE>
+    </PLAYLISTS>
+</DJ_PLAYLISTS>
