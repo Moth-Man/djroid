@@ -6,6 +6,7 @@ from ..logging import setup_logging, get_logger
 from ..config import LOG_LEVEL
 from djroid.services.tag_schema import TagSchema
 from djroid.services.tag import Tag
+from djroid.services.scan import Scan
 from djroid.services.tag_interactive import TagInteractive
 
 # Initialize logger for this module
@@ -80,31 +81,45 @@ def tag(directory: str, file: str, interactive: bool):
         logger.error(f"Failed to tag songs: {str(e)}", exc_info=True)
         click.echo(f"Error tagging songs: {str(e)}", err=True)
 
+@cli.command()
+@click.argument('directory', type=click.Path(exists=True), required=False)
+@click.option('--file', type=click.Path(exists=True), help='Scan a single file instead of a directory')
+@click.option('--no-progress', is_flag=True, help='Disable progress bar')
+def scan(directory: str, file: str, no_progress: bool):
+    """Scan a song or directory of songs into djroid's database"""
+    logger.info("Starting scan operation")
+    try:
+        scan_service = Scan()
+        
+        if file:
+            # Scan single file
+            file_path = Path(file)
+            if not file_path.exists():
+                click.echo(f"Error: File not found: {file}", err=True)
+                return
+            
+            success = scan_service.scan_single_file_cli(file_path)
+            if success:
+                logger.info("Single file scan completed successfully")
+            else:
+                logger.error("Single file scan failed")
+        else:
+            # Scan directory
+            dir_path = Path(directory) if directory else Path.cwd()
+            if not dir_path.exists():
+                click.echo(f"Error: Directory not found: {dir_path}", err=True)
+                return
+            
+            result = scan_service.scan_directory(dir_path, show_progress=not no_progress)
+            if result["success"]:
+                logger.info("Directory scan completed successfully")
+            else:
+                logger.error(f"Directory scan failed: {result.get('error', 'Unknown error')}")
+                click.echo(f"Error scanning directory: {result.get('error', 'Unknown error')}", err=True)
+                
+    except Exception as e:
+        logger.error(f"Failed to scan songs: {str(e)}", exc_info=True)
+        click.echo(f"Error scanning songs: {str(e)}", err=True)
+
 if __name__ == '__main__':
     cli()
-
-# @cli.command()
-# @click.argument('directory', type=click.Path(exists=True))
-# @click.option('--recursive/--no-recursive', default=True, help='Recursively scan subdirectories')
-# def ingest(directory: str, recursive: bool):
-#     """Ingest music files from a directory into the database."""
-#     click.echo(f"Ingesting music files from {directory}...")
-    
-#     # Initialize database
-#     init_db()
-    
-#     # Get database session
-#     db = next(get_db())
-    
-#     # Create ingestor and process files
-#     ingestor = SongIngestor(db)
-#     songs = ingestor.ingest_directory(directory, recursive=recursive)
-    
-#     click.echo(f"Successfully ingested {len(songs)} songs.")
-
-# @cli.command()
-# def init():
-#     """Initialize the database."""
-#     click.echo("Initializing database...")
-#     init_db()
-#     click.echo("Database initialized successfully.")

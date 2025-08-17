@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt, Confirm, IntPrompt
@@ -102,11 +102,19 @@ class Tag:
                             # Handle comma-separated values
                             text_values = value.text
                             if isinstance(text_values, list):
-                                # If it's already a list, use as is
-                                tags[category] = [str(v) for v in text_values]
+                                # If it's already a list, split each item by commas
+                                all_values = []
+                                for item in text_values:
+                                    if isinstance(item, str):
+                                        # Split by commas and strip whitespace
+                                        split_values = [v.strip() for v in item.split(',') if v.strip()]
+                                        all_values.extend(split_values)
+                                    else:
+                                        all_values.append(str(item))
+                                tags[category] = all_values
                             else:
-                                # If it's a string, split by commas
-                                tags[category] = [v.strip() for v in str(text_values).split(',')]
+                                # If it's a string, split by commas and strip whitespace
+                                tags[category] = [v.strip() for v in str(text_values).split(',') if v.strip()]
                         else:
                             # Fallback
                             tags[category] = [str(value)]
@@ -1313,3 +1321,40 @@ class Tag:
         except Exception as e:
             self.console.print(f"[red]Failed to migrate file: {e}[/red]")
             logger.error(f"Failed to migrate {file_path} to {new_file_path}: {e}")
+
+    def build_tags_json_from_file(self, file_path: Path) -> Dict[str, Any]:
+        """Build a tags JSON object from a file's TXXX tags and the user's schema"""
+        tags_json = {}
+        
+        # Get the file's TXXX tags
+        file_tags = self.get_file_tags(file_path)
+        
+        # For each category in the schema, check if the file has values
+        for category, config in self.schema.items():
+            if isinstance(config, list):
+                # Regular multi-value category
+                if category in file_tags:
+                    tags_json[category] = file_tags[category]
+                elif category.upper() in file_tags:
+                    tags_json[category] = file_tags[category.upper()]
+            elif isinstance(config, dict) and config.get("type") == "rating":
+                # Rating category
+                if category in file_tags:
+                    try:
+                        # Try to get the first value and convert to int
+                        rating_value = int(file_tags[category][0])
+                        max_rating = config.get("max_rating", 5)
+                        if 1 <= rating_value <= max_rating:
+                            tags_json[category] = rating_value
+                    except (ValueError, IndexError):
+                        pass
+                elif category.upper() in file_tags:
+                    try:
+                        rating_value = int(file_tags[category.upper()][0])
+                        max_rating = config.get("max_rating", 5)
+                        if 1 <= rating_value <= max_rating:
+                            tags_json[category] = rating_value
+                    except (ValueError, IndexError):
+                        pass
+        
+        return tags_json
