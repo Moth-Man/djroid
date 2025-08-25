@@ -1,0 +1,106 @@
+/* Djroid Textual CSS Styles */
+/* HAL 9000-inspired color scheme with gray background and red-orange-yellow-green accent progression */
+
+/* Global app styling */
+Screen {
+    background: #282828;
+    color: #ebdbb2;
+}
+
+/* Main horizontal layout */
+Horizontal {
+    height: 100%;
+}
+
+/* Chat interface - takes 3/4 of the width */
+#chat_interface {
+    width: 75%;
+    height: 100%;
+    border: solid #504945;
+    background: #1d2021;
+    padding: 1;
+    margin: 1;
+}
+
+/* HAL component - takes 1/4 of the width, all height */
+#hal_component {
+    width: 25%;
+    height: 100%;
+    border: solid #458588;
+    background: #282828;
+    padding: 1;
+    margin: 1;
+}
+
+/* HAL frame display */
+.hal-frame {
+    text-align: center;
+    content-align: center middle;
+}
+
+/* Welcome panel styling */
+#welcome_panel {
+    height: auto;
+    margin-bottom: 1;
+}
+
+/* Command display panel */
+#command_display {
+    height: auto;
+    margin-bottom: 1;
+}
+
+/* Djroid response panel */
+#djroid_response {
+    height: auto;
+    margin-bottom: 1;
+}
+
+/* Help text panel */
+#help_text {
+    height: auto;
+    dock: bottom;
+}
+
+/* Footer styling */
+Footer {
+    background: #1d2021;
+    color: #928374;
+}
+
+/* Focus and selection styling */
+.focused {
+    border: solid #d79921;
+}
+
+/* Panel border colors */
+Panel {
+    border: solid #504945;
+}
+
+/* Command highlighting */
+.command-selected {
+    background: #3c3836;
+    color: #fabd2f;
+}
+
+/* Responsive design for smaller terminals */
+@media (max-width: 80) {
+    #hal_component {
+        display: none;
+    }
+    
+    #chat_interface {
+        width: 100%;
+    }
+}
+
+@media (max-height: 24) {
+    #welcome_panel {
+        height: 3;
+    }
+    
+    #djroid_response {
+        height: 6;
+    }
+}
