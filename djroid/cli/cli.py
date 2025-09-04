@@ -8,17 +8,23 @@ from djroid.services.tag_schema import TagSchema
 from djroid.services.tag import Tag
 from djroid.services.scan import Scan
 from djroid.services.tag_interactive import TagInteractive
+from djroid.gui.app import run_gui
 
 # Initialize logger for this module
 logger = get_logger(__name__)
 
-@click.group()
-def cli():
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
     """DJroid - An AI-assisted DJ tool suit."""
     # Initialize logging when CLI starts
     setup_logging(LOG_LEVEL)
     logger.info("Starting DJroid CLI")
-    pass
+    
+    # If no command is provided, launch the GUI
+    if ctx.invoked_subcommand is None:
+        logger.info("No command provided, launching GUI")
+        run_gui()
 
 @cli.command()
 @click.option('--prompt', required=True, help='The prompt to generate the crate from')

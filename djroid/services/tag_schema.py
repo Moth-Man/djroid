@@ -257,6 +257,29 @@ class TagSchema:
         
         return schema
 
+    def get_display_content(self) -> str:
+        """Get formatted content for GUI display"""
+        schema = self.load_schema()
+        
+        if not schema:
+            return "No tag schema found. Run 'djroid tag-schema' to create one."
+        
+        content_lines = []
+        for category, values in schema.items():
+            if isinstance(values, list):
+                content_lines.append(f"{category.upper()}")
+                for value in values[:10]:  # Show first 10 values
+                    content_lines.append(f"• {value}")
+                if len(values) > 10:
+                    content_lines.append(f"• ... ({len(values) - 10} more)")
+                content_lines.append("")  # Empty line between categories
+            elif isinstance(values, dict) and values.get("type") == "rating":
+                max_rating = values.get("max_rating", 5)
+                content_lines.append(f"{category.upper()} (Rating 1-{max_rating})")
+                content_lines.append("")
+        
+        return "\n".join(content_lines)
+
     def setup_schema(self):
         """Main method to setup the tag schema interactively"""
         self.console.print(Panel.fit(
