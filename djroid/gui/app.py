@@ -40,7 +40,7 @@ class SongsPanel(Static):
     
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("🎵 SONGS", classes="panel-header")
+            yield Static("SONGS", classes="panel-header")
             table = DataTable()
             table.add_columns("Title", "Artist", "Genre", "BPM", "Key")
             
@@ -66,10 +66,10 @@ class TagSchemaPanel(Static):
     
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("🏷️  TAG SCHEMA", classes="panel-header")
-            table = DataTable(id="schema-table", show_header=False)
+            yield Static("TAG SCHEMA", classes="panel-header")
+            table = DataTable(id="schema-table")
             table.cursor_type = "row"
-            table.zebra_stripes = True
+            table.zebra_stripes = False
             yield table
     
     def on_mount(self) -> None:
@@ -77,54 +77,56 @@ class TagSchemaPanel(Static):
         self.load_schema_data()
                 
     def load_schema_data(self):
-        """Load and display schema data in table"""
-        self.schema_data = self.tag_schema.load_schema()
-        table = self.query_one("#schema-table")
-        table.clear(columns=True)
-        
-        if self.selected_category is None:
-            # Show all categories
-            table.add_column("")
+        """Load and display all schema data in flat table format"""
+        try:
+            self.schema_data = self.tag_schema.load_schema()
+            table = self.query_one("#schema-table")
+            table.clear(columns=True)
+            
+            # Show all categories and their values in one flat table - force full width
+            table.add_column("Tag Schema", width=50)
+            
+            # Add blank first row
+            table.add_row("")
+            
+            if not self.schema_data:
+                table.add_row("No tag schema found")
+                return
+            
+            category_count = len(self.schema_data)
+            current_category = 0
+            
             for category, values in self.schema_data.items():
-                table.add_row(category.title())
-        else:
-            # Show selected category values with category name as first row
-            if self.selected_category in self.schema_data:
-                table.add_column("")
+                current_category += 1
                 
-                # Add category name as first row with return arrow and bold styling
-                category_text = Text(f"← {self.selected_category.title()}", style="bold white")
+                # Add category name in bold
+                category_text = Text(category.title(), style="bold white")
                 table.add_row(category_text)
                 
-                values = self.schema_data[self.selected_category]
+                # Add all values for this category
                 if isinstance(values, list):
                     for value in values:
-                        table.add_row(value)
+                        table.add_row(f"  {value}")
                 elif isinstance(values, dict) and values.get("type") == "rating":
                     max_rating = values.get("max_rating", 5)
                     for i in range(1, max_rating + 1):
-                        table.add_row(str(i))
+                        table.add_row(f"  {i}")
+                
+                # Add blank row after each category (except the last one)
+                if current_category < category_count:
+                    table.add_row("")
+            
+            # Refresh the table layout to ensure proper column sizing
+            table.refresh()
+        
+        except Exception as e:
+            # Add error message to table
+            table = self.query_one("#schema-table")
+            table.clear(columns=True)
+            table.add_column("")
+            table.add_row("")
+            table.add_row(f"Error loading schema: {str(e)}")
     
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle row selection in the table"""
-        table = event.data_table
-        if self.selected_category is None:
-            # We're in category view, switch to selected category
-            row_data = table.get_row_at(event.cursor_row)
-            category_name = str(row_data[0])
-            
-            # Find the actual category key (case-insensitive match)
-            for key in self.schema_data.keys():
-                if key.title() == category_name:
-                    self.selected_category = key
-                    break
-            
-            self.load_schema_data()
-        else:
-            # We're in values view, go back to categories if clicked on first row (category header)
-            if event.cursor_row == 0:
-                self.selected_category = None
-                self.load_schema_data()
 
 
 class DjroidGUI(App):
@@ -159,6 +161,7 @@ class DjroidGUI(App):
         margin: 1;
         background: #0a0a0a;
     }
+    
     
     .panel-header {
         background: #2a2a2a;
@@ -202,25 +205,39 @@ class DjroidGUI(App):
     }
     
     /* Tag Schema Panel Specific Styles */
-    #schema-table {
+    #tags-panel DataTable {
         background: #0a0a0a;
         color: #e0e0e0;
+        width: 100%;
     }
     
-    #schema-table > .datatable--header {
+    #tags-panel DataTable > .datatable--header {
         background: #2a2a2a;
         color: #e0e0e0;
         text-style: bold;
     }
     
-    #schema-table > .datatable--cursor {
+    #tags-panel DataTable > .datatable--cursor {
         background: #333333;
         color: #ffffff;
     }
     
-    #schema-table > .datatable--cursor:hover {
+    #tags-panel DataTable > .datatable--cursor:hover {
         background: #444444;
         color: #ffffff;
+    }
+    
+    /* Custom zebra stripes since we disabled the built-in ones */
+    #schema-table .datatable--row:odd {
+        background: #111111;
+    }
+    
+    #schema-table .datatable--row:even {
+        background: #0a0a0a;
+    }
+    
+    #schema-table .datatable--row:hover {
+        background: #333333;
     }
     
     """
