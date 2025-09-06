@@ -4,6 +4,7 @@ from textual.widgets import Static, Input, Tree, DataTable, Button, Sparkline
 from textual.containers import ScrollableContainer
 from textual.reactive import reactive
 from textual.message import Message
+from textual import events
 from rich.text import Text
 from ..services.tag_schema import TagSchema
 from ..db.session import SessionLocal
@@ -31,7 +32,7 @@ class PlaylistPanel(Static):
     
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("📁 PLAYLISTS", classes="panel-header")
+            yield Static("📁 PLAYLISTSSSSS", classes="panel-header")
             tree = Tree("Root")
             tree.root.expand()
             
@@ -85,16 +86,17 @@ class SongsPanel(Static):
             table = self.query_one("#songs-table")
             table.clear(columns=True)
             
-            # Add columns with specific widths for better display (removed Preview column)
+            # Add columns with specific widths for better display
             table.add_column("Title", width=25)
             table.add_column("Artist", width=20) 
             table.add_column("Genre", width=15)
             table.add_column("BPM", width=6)
             table.add_column("Key", width=6)
             table.add_column("Quality", width=8)
+            table.add_column("Preview", width=20)
             
             if not songs:
-                table.add_row("No songs found", "", "", "", "", "")
+                table.add_row("No songs found", "", "", "", "", "", "")
                 return
             
             # Store song data for click handling
@@ -150,17 +152,36 @@ class SongsPanel(Static):
                 from math import sin
                 waveform_data = song.waveform_preview or [abs(sin(x / 3.14)) for x in range(0, 360, 25)][:15]
                 
-                # Determine sparkline ID based on quality score
-                if quality_score >= 0.85:
-                    sparkline_id = "high-quality"  # Green gradient
-                elif quality_score >= 0.6:
-                    sparkline_id = "medium-quality"  # Yellow/warning gradient
-                else:
-                    sparkline_id = "low-quality"  # Red/error gradient
+                # Create single sparkline with gradient colors
+                # Use the current song index (before adding to song_data)
+                song_index = len(self.song_data)
                 
-                # Create and add sparkline to container
-                sparkline = Sparkline(waveform_data, summary_function=max, id=sparkline_id, classes="song-sparkline")
+                # Cycle through different gradient patterns
+                gradient_patterns = [
+                    "gradient-1", "gradient-2", "gradient-3", "gradient-4", "gradient-5",
+                    "gradient-6", "gradient-7", "gradient-8", "gradient-9", "gradient-10"
+                ]
+                pattern_class = gradient_patterns[song_index % len(gradient_patterns)]
+                
+                # Create sparkline with gradient class for separate panel
+                sparkline = Sparkline(waveform_data, summary_function=max, classes=f"waveform-sparkline {pattern_class}")
                 sparkline_container.mount(sparkline)
+                
+                # Create text-based preview for DataTable column
+                preview_text = Text()
+                for i, value in enumerate(waveform_data[:10]):  # Limit to 10 points for table
+                    if value <= 0.3:
+                        bar = "▁"
+                    elif value <= 0.6:
+                        bar = "▅"
+                    else:
+                        bar = "█"
+                    
+                    # Use gradient color based on pattern
+                    color = "green" if pattern_class in ["gradient-6", "gradient-7", "gradient-8", "gradient-9"] else \
+                            "yellow" if pattern_class in ["gradient-4", "gradient-5", "gradient-10"] else "red"
+                    
+                    preview_text.append(bar, style=color)
                 
                 table.add_row(
                     song.title or "Unknown",
@@ -169,6 +190,7 @@ class SongsPanel(Static):
                     bpm_str,
                     song.key or "",
                     quality_str,
+                    preview_text,
                     key=str(len(self.song_data) - 1)  # Use index as row key
                 )
             
@@ -187,7 +209,7 @@ class SongsPanel(Static):
                 db.close()
     
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle song row selection"""
+        """Handle song row selection (click)"""
         if event.data_table.id == "songs-table" and hasattr(self, 'song_data'):
             try:
                 # Get the selected song data using the row key
@@ -197,6 +219,34 @@ class SongsPanel(Static):
                 # Send message to the app to highlight tags
                 self.post_message(SongSelected(selected_song))
             except (IndexError, ValueError, AttributeError):
+                pass
+    
+    def on_data_table_cursor_changed(self, event: events.CursorPosition) -> None:
+        """Handle cursor movement in the table (arrow keys)"""
+        if event.data_table.id == "songs-table" and hasattr(self, 'song_data'):
+            try:
+                # Get the current cursor row
+                row_index = event.cursor_row
+                if 0 <= row_index < len(self.song_data):
+                    selected_song = self.song_data[row_index]
+                    
+                    # Send message to the app to highlight tags
+                    self.post_message(SongSelected(selected_song))
+            except (IndexError, ValueError, AttributeError):
+                pass
+    
+    def on_key(self, event) -> None:
+        """Handle key events to catch arrow navigation"""
+        if event.key in ["up", "down"] and hasattr(self, 'song_data'):
+            # Get the current table
+            try:
+                table = self.query_one("#songs-table")
+                cursor_row = table.cursor_row
+                
+                if 0 <= cursor_row < len(self.song_data):
+                    selected_song = self.song_data[cursor_row]
+                    self.post_message(SongSelected(selected_song))
+            except Exception:
                 pass
 
 
@@ -258,8 +308,8 @@ class TagSchemaPanel(Static):
                         if highlighted_tags and category in highlighted_tags:
                             song_values = highlighted_tags[category]
                             if isinstance(song_values, list) and value in song_values:
-                                # Highlight in green
-                                value_text = Text(f"  {value}", style="bold green")
+                                # Add checkmark and highlight in green
+                                value_text = Text(f"✓ {value}", style="bold green")
                                 table.add_row(value_text)
                             else:
                                 table.add_row(f"  {value}")
@@ -272,8 +322,8 @@ class TagSchemaPanel(Static):
                         if highlighted_tags and category in highlighted_tags:
                             song_rating = highlighted_tags[category]
                             if isinstance(song_rating, (int, float)) and int(song_rating) == i:
-                                # Highlight in green
-                                rating_text = Text(f"  {i}", style="bold green")
+                                # Add checkmark and highlight in green
+                                rating_text = Text(f"✓ {i}", style="bold green")
                                 table.add_row(rating_text)
                             else:
                                 table.add_row(f"  {i}")
@@ -353,6 +403,7 @@ class DjroidGUI(App):
     
     #songs-panel {
         width: 2fr;
+        height: 1fr;
     }
     
     #tags-panel {
@@ -377,6 +428,28 @@ class DjroidGUI(App):
     
     DataTable > .datatable--cursor {
         background: #1a1a1a;
+        color: #00ff00 !important;
+    }
+    
+    /* Ensure highlighted row text is green in songs table */
+    #songs-table > .datatable--cursor {
+        background: #1a1a1a !important;
+        color: #00ff00 !important;
+    }
+    
+    /* Target all text in cursor row */
+    #songs-table .datatable--cursor {
+        color: #00ff00 !important;
+    }
+    
+    /* Target cells within cursor row */  
+    #songs-table .datatable--cursor .datatable--cell {
+        color: #00ff00 !important;
+    }
+    
+    /* Target any text content in cursor */
+    #songs-table .datatable--cursor * {
+        color: #00ff00 !important;
     }
     
     /* Tag Schema Panel Specific Styles */
@@ -441,14 +514,22 @@ class DjroidGUI(App):
         margin: 0;
     }
     
-    /* Songs content layout */
+    /* ============ SPARKLINE PANEL LAYOUT ============ */
     #songs-content {
         width: 100%;
+        height: 1fr;
+    }
+    
+    #songs-table {
+        width: 75%;
+        height: 1fr;
     }
     
     #sparkline-panel {
-        width: 30%;
-        min-width: 25;
+        width: 25%;
+        min-width: 20;
+        height: 1fr;
+        border-left: solid #333;
     }
     
     .sparkline-header {
@@ -462,39 +543,55 @@ class DjroidGUI(App):
     
     #sparkline-container {
         background: #0a0a0a;
+        height: 1fr;
+        padding: 1;
     }
     
-    /* Sparkline styling with gradients like the textual docs example */
-    Sparkline.song-sparkline {
+    /* ============ WAVEFORM SPARKLINE STYLING ============ */
+    .waveform-sparkline {
         width: 100%;
-        margin: 0;
-        height: 1;
+        height: 3;
+        margin: 1 0;
         padding: 0;
+        border: solid #333;
     }
     
-    /* High quality: Green gradient (like $success to $success 30%) */
-    #high-quality > .sparkline--max-color {
-        color: $success;
-    }
-    #high-quality > .sparkline--min-color {
-        color: $success 30%;
-    }
+    /* ============ SPARKLINE COLOR GRADIENTS ============ */
     
-    /* Medium quality: Yellow/warning gradient */
-    #medium-quality > .sparkline--max-color {
-        color: $warning;
-    }
-    #medium-quality > .sparkline--min-color {
-        color: $warning 30%;
-    }
+    /* Red-Orange-Green Spectrum Gradients */
+    .gradient-1 > .sparkline--max-color { color: $error; }
+    .gradient-1 > .sparkline--min-color { color: $error 30%; }
     
-    /* Low quality: Red/error gradient */
-    #low-quality > .sparkline--max-color {
-        color: $error;
-    }
-    #low-quality > .sparkline--min-color {
-        color: $error 30%;
-    }
+    .gradient-2 > .sparkline--max-color { color: $error; }
+    .gradient-2 > .sparkline--min-color { color: $warning; }
+    
+    .gradient-3 > .sparkline--max-color { color: $warning; }
+    .gradient-3 > .sparkline--min-color { color: $error; }
+    
+    .gradient-4 > .sparkline--max-color { color: $warning; }
+    .gradient-4 > .sparkline--min-color { color: $warning 30%; }
+    
+    .gradient-5 > .sparkline--max-color { color: $warning; }
+    .gradient-5 > .sparkline--min-color { color: $success; }
+    
+    .gradient-6 > .sparkline--max-color { color: $success; }
+    .gradient-6 > .sparkline--min-color { color: $warning; }
+    
+    .gradient-7 > .sparkline--max-color { color: $success; }
+    .gradient-7 > .sparkline--min-color { color: $success 30%; }
+    
+    .gradient-8 > .sparkline--max-color { color: $success; }
+    .gradient-8 > .sparkline--min-color { color: $success 60%; }
+    
+    .gradient-9 > .sparkline--max-color { color: $accent; }
+    .gradient-9 > .sparkline--min-color { color: $primary; }
+    
+    .gradient-10 > .sparkline--max-color { color: $primary; }
+    .gradient-10 > .sparkline--min-color { color: $accent; }
+    
+    /* Default fallback */
+    .waveform-sparkline > .sparkline--max-color { color: $success; }
+    .waveform-sparkline > .sparkline--min-color { color: $warning; }
     
     """
     
