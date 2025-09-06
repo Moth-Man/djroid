@@ -10,6 +10,14 @@ from ..db.session import SessionLocal
 from ..db.dao.song_dao import SongDAO
 
 
+class SongSelected(Message):
+    """Message sent when a song is selected"""
+    
+    def __init__(self, song_data: dict) -> None:
+        super().__init__()
+        self.song_data = song_data
+
+
 class ChatBox(Static):
     """Chat input box at the top of the application."""
     
@@ -59,9 +67,9 @@ class SongsPanel(Static):
             # Get database session
             db = SessionLocal()
             
-            # Query songs directly using basic fields only
+            # Query songs with all fields we need including ID and tags
             from djroid.db.models.song import Song
-            songs = db.query(Song.title, Song.artist, Song.genre, Song.bpm, Song.key).limit(50).all()
+            songs = db.query(Song.id, Song.title, Song.artist, Song.genre, Song.bpm, Song.key, Song.tags, Song.filepath).limit(50).all()
             
             table = self.query_one("#songs-table")
             table.clear(columns=True)
@@ -77,6 +85,9 @@ class SongsPanel(Static):
                 table.add_row("No songs found", "", "", "", "")
                 return
             
+            # Store song data for click handling
+            self.song_data = []
+            
             # Add song rows
             for song in songs:
                 # Format BPM safely
@@ -87,12 +98,25 @@ class SongsPanel(Static):
                     except (ValueError, TypeError):
                         bpm_str = str(song.bpm)
                 
+                # Store full song data
+                self.song_data.append({
+                    'id': song.id,
+                    'title': song.title,
+                    'artist': song.artist,
+                    'genre': song.genre,
+                    'bpm': song.bpm,
+                    'key': song.key,
+                    'tags': song.tags,
+                    'filepath': song.filepath
+                })
+                
                 table.add_row(
                     song.title or "Unknown",
                     song.artist or "Unknown", 
                     song.genre or "",
                     bpm_str,
-                    song.key or ""
+                    song.key or "",
+                    key=str(len(self.song_data) - 1)  # Use index as row key
                 )
             
             # Refresh the table layout
@@ -108,6 +132,19 @@ class SongsPanel(Static):
         finally:
             if 'db' in locals():
                 db.close()
+    
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Handle song row selection"""
+        if event.data_table.id == "songs-table" and hasattr(self, 'song_data'):
+            try:
+                # Get the selected song data using the row key
+                row_index = int(event.row_key.value)
+                selected_song = self.song_data[row_index]
+                
+                # Send message to the app to highlight tags
+                self.post_message(SongSelected(selected_song))
+            except (IndexError, ValueError, AttributeError):
+                pass
 
 
 
@@ -134,8 +171,8 @@ class TagSchemaPanel(Static):
         """Called when the widget is mounted to the DOM."""
         self.load_schema_data()
                 
-    def load_schema_data(self):
-        """Load and display all schema data in flat table format"""
+    def load_schema_data(self, highlighted_tags=None):
+        """Load and display all schema data in flat table format with optional highlighting"""
         try:
             self.schema_data = self.tag_schema.load_schema()
             table = self.query_one("#schema-table")
@@ -164,11 +201,31 @@ class TagSchemaPanel(Static):
                 # Add all values for this category
                 if isinstance(values, list):
                     for value in values:
-                        table.add_row(f"  {value}")
+                        # Check if this value should be highlighted
+                        if highlighted_tags and category in highlighted_tags:
+                            song_values = highlighted_tags[category]
+                            if isinstance(song_values, list) and value in song_values:
+                                # Highlight in green
+                                value_text = Text(f"  {value}", style="bold green")
+                                table.add_row(value_text)
+                            else:
+                                table.add_row(f"  {value}")
+                        else:
+                            table.add_row(f"  {value}")
                 elif isinstance(values, dict) and values.get("type") == "rating":
                     max_rating = values.get("max_rating", 5)
                     for i in range(1, max_rating + 1):
-                        table.add_row(f"  {i}")
+                        # Check if this rating should be highlighted
+                        if highlighted_tags and category in highlighted_tags:
+                            song_rating = highlighted_tags[category]
+                            if isinstance(song_rating, (int, float)) and int(song_rating) == i:
+                                # Highlight in green
+                                rating_text = Text(f"  {i}", style="bold green")
+                                table.add_row(rating_text)
+                            else:
+                                table.add_row(f"  {i}")
+                        else:
+                            table.add_row(f"  {i}")
                 
                 # Add blank row after each category (except the last one)
                 if current_category < category_count:
@@ -184,6 +241,13 @@ class TagSchemaPanel(Static):
             table.add_column("")
             table.add_row("")
             table.add_row(f"Error loading schema: {str(e)}")
+    
+    def highlight_song_tags(self, song_tags):
+        """Highlight tags in the schema that match the selected song"""
+        if song_tags:
+            self.load_schema_data(song_tags)
+        else:
+            self.load_schema_data()
     
 
 
@@ -335,6 +399,18 @@ class DjroidGUI(App):
         """Called when the app starts."""
         self.title = "Djroid - AI DJ Assistant"
         self.sub_title = "Rekordbox-inspired music management"
+    
+    def on_song_selected(self, event: SongSelected) -> None:
+        """Handle song selection - highlight tags in schema panel"""
+        try:
+            # Get the tag schema panel
+            tag_panel = self.query_one("#tags-panel")
+            
+            # Highlight the tags from the selected song
+            tag_panel.highlight_song_tags(event.song_data.get('tags'))
+            
+        except Exception as e:
+            pass  # Silently handle any errors
 
 
 def run_gui():
