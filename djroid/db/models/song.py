@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from sqlalchemy import Integer, String, Float, DateTime, Text
+from sqlalchemy import Integer, String, Float, DateTime, Text, ARRAY
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import mapped_column, Mapped
 from datetime import datetime, UTC
@@ -43,6 +43,10 @@ class Song(Base):
     
     # Tags JSON object
     tags: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True, index=True)
+    
+    # Audio analysis fields
+    quality_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True, index=True)
+    waveform_preview: Mapped[Optional[List[float]]] = mapped_column(ARRAY(Float), nullable=True)
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(UTC))

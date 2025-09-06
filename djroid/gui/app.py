@@ -1,6 +1,6 @@
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Static, Input, Tree, DataTable, Button
+from textual.widgets import Static, Input, Tree, DataTable, Button, Sparkline
 from textual.containers import ScrollableContainer
 from textual.reactive import reactive
 from textual.message import Message
@@ -8,6 +8,7 @@ from rich.text import Text
 from ..services.tag_schema import TagSchema
 from ..db.session import SessionLocal
 from ..db.dao.song_dao import SongDAO
+from typing import Tuple, List
 
 
 class SongSelected(Message):
@@ -48,14 +49,24 @@ class PlaylistPanel(Static):
 class SongsPanel(Static):
     """Middle panel showing songs list."""
     
+    
+    
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Static("SONGS", classes="panel-header")
             with ScrollableContainer(id="songs-scroll-container"):
-                table = DataTable(id="songs-table")
-                table.cursor_type = "row"
-                table.zebra_stripes = True
-                yield table
+                with Horizontal(id="songs-content"):
+                    # Main songs table without Preview column
+                    table = DataTable(id="songs-table")
+                    table.cursor_type = "row"
+                    table.zebra_stripes = True
+                    yield table
+                    
+                    # Sparkline panel aligned with table rows
+                    with Vertical(id="sparkline-panel"):
+                        yield Static("Preview", classes="sparkline-header")
+                        with Vertical(id="sparkline-container"):
+                            pass  # Sparklines will be added dynamically
     
     def on_mount(self) -> None:
         """Called when the widget is mounted to the DOM."""
@@ -67,28 +78,33 @@ class SongsPanel(Static):
             # Get database session
             db = SessionLocal()
             
-            # Query songs with all fields we need including ID and tags
+            # Query songs with all fields we need including ID, tags, and audio analysis
             from djroid.db.models.song import Song
-            songs = db.query(Song.id, Song.title, Song.artist, Song.genre, Song.bpm, Song.key, Song.tags, Song.filepath).limit(50).all()
+            songs = db.query(Song.id, Song.title, Song.artist, Song.genre, Song.bpm, Song.key, Song.tags, Song.filepath, Song.quality_score, Song.waveform_preview).limit(50).all()
             
             table = self.query_one("#songs-table")
             table.clear(columns=True)
             
-            # Add columns with specific widths for better display
-            table.add_column("Title", width=30)
-            table.add_column("Artist", width=25) 
-            table.add_column("Genre", width=20)
-            table.add_column("BPM", width=8)
-            table.add_column("Key", width=8)
+            # Add columns with specific widths for better display (removed Preview column)
+            table.add_column("Title", width=25)
+            table.add_column("Artist", width=20) 
+            table.add_column("Genre", width=15)
+            table.add_column("BPM", width=6)
+            table.add_column("Key", width=6)
+            table.add_column("Quality", width=8)
             
             if not songs:
-                table.add_row("No songs found", "", "", "", "")
+                table.add_row("No songs found", "", "", "", "", "")
                 return
             
             # Store song data for click handling
             self.song_data = []
             
-            # Add song rows
+            # Clear and prepare sparkline container
+            sparkline_container = self.query_one("#sparkline-container")
+            sparkline_container.remove_children()
+            
+            # Add song rows and sparklines
             for song in songs:
                 # Format BPM safely
                 bpm_str = ""
@@ -107,8 +123,44 @@ class SongsPanel(Static):
                     'bpm': song.bpm,
                     'key': song.key,
                     'tags': song.tags,
-                    'filepath': song.filepath
+                    'filepath': song.filepath,
+                    'quality_score': song.quality_score,
+                    'waveform_preview': song.waveform_preview
                 })
+                
+                # Format quality score
+                quality_str = ""
+                if song.quality_score is not None:
+                    quality_str = f"{song.quality_score:.2f}"
+                
+                # Create sparkline for separate panel
+                # If no quality score, generate a varied one based on song index for demo
+                quality_score = song.quality_score
+                if quality_score is None:
+                    # Create varied quality scores for demo (cycle through ranges)
+                    song_index = len(self.song_data)
+                    if song_index % 3 == 0:
+                        quality_score = 0.9  # High quality
+                    elif song_index % 3 == 1:
+                        quality_score = 0.7  # Medium quality  
+                    else:
+                        quality_score = 0.4  # Low quality
+                
+                # Generate waveform data like the example
+                from math import sin
+                waveform_data = song.waveform_preview or [abs(sin(x / 3.14)) for x in range(0, 360, 25)][:15]
+                
+                # Determine sparkline ID based on quality score
+                if quality_score >= 0.85:
+                    sparkline_id = "high-quality"  # Green gradient
+                elif quality_score >= 0.6:
+                    sparkline_id = "medium-quality"  # Yellow/warning gradient
+                else:
+                    sparkline_id = "low-quality"  # Red/error gradient
+                
+                # Create and add sparkline to container
+                sparkline = Sparkline(waveform_data, summary_function=max, id=sparkline_id, classes="song-sparkline")
+                sparkline_container.mount(sparkline)
                 
                 table.add_row(
                     song.title or "Unknown",
@@ -116,6 +168,7 @@ class SongsPanel(Static):
                     song.genre or "",
                     bpm_str,
                     song.key or "",
+                    quality_str,
                     key=str(len(self.song_data) - 1)  # Use index as row key
                 )
             
@@ -126,7 +179,7 @@ class SongsPanel(Static):
             # Add error message to table
             table = self.query_one("#songs-table")
             table.clear(columns=True)
-            table.add_columns("Error")
+            table.add_column("Error")
             table.add_row(f"Error loading songs: {str(e)}")
         
         finally:
@@ -379,6 +432,68 @@ class DjroidGUI(App):
     #songs-table {
         min-width: 100%;
         scrollbar-size: 0 0;
+    }
+    
+    /* Improve waveform spacing and prevent blob effect */
+    DataTable > .datatable--row {
+        height: 1;
+        padding: 0;
+        margin: 0;
+    }
+    
+    /* Songs content layout */
+    #songs-content {
+        width: 100%;
+    }
+    
+    #sparkline-panel {
+        width: 30%;
+        min-width: 25;
+    }
+    
+    .sparkline-header {
+        background: #2a2a2a;
+        color: #ffffff;
+        text-align: center;
+        height: 3;
+        content-align: center middle;
+        text-style: bold;
+    }
+    
+    #sparkline-container {
+        background: #0a0a0a;
+    }
+    
+    /* Sparkline styling with gradients like the textual docs example */
+    Sparkline.song-sparkline {
+        width: 100%;
+        margin: 0;
+        height: 1;
+        padding: 0;
+    }
+    
+    /* High quality: Green gradient (like $success to $success 30%) */
+    #high-quality > .sparkline--max-color {
+        color: $success;
+    }
+    #high-quality > .sparkline--min-color {
+        color: $success 30%;
+    }
+    
+    /* Medium quality: Yellow/warning gradient */
+    #medium-quality > .sparkline--max-color {
+        color: $warning;
+    }
+    #medium-quality > .sparkline--min-color {
+        color: $warning 30%;
+    }
+    
+    /* Low quality: Red/error gradient */
+    #low-quality > .sparkline--max-color {
+        color: $error;
+    }
+    #low-quality > .sparkline--min-color {
+        color: $error 30%;
     }
     
     """
