@@ -6,6 +6,8 @@ from textual.reactive import reactive
 from textual.message import Message
 from rich.text import Text
 from ..services.tag_schema import TagSchema
+from ..db.session import SessionLocal
+from ..db.dao.song_dao import SongDAO
 
 
 class ChatBox(Static):
@@ -41,15 +43,71 @@ class SongsPanel(Static):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Static("SONGS", classes="panel-header")
-            table = DataTable()
-            table.add_columns("Title", "Artist", "Genre", "BPM", "Key")
+            with ScrollableContainer(id="songs-scroll-container"):
+                table = DataTable(id="songs-table")
+                table.cursor_type = "row"
+                table.zebra_stripes = True
+                yield table
+    
+    def on_mount(self) -> None:
+        """Called when the widget is mounted to the DOM."""
+        self.load_songs()
+    
+    def load_songs(self):
+        """Load and display songs from the database"""
+        try:
+            # Get database session
+            db = SessionLocal()
             
-            # Add some sample songs
-            table.add_row("Sweet Dreams", "Eurythmics", "Synth-pop", "132", "Cm")
-            table.add_row("Blue Monday", "New Order", "Electronic", "125", "F#m")
-            table.add_row("Strings of Life", "Derrick May", "Detroit Techno", "125", "Gm")
+            # Query songs directly using basic fields only
+            from djroid.db.models.song import Song
+            songs = db.query(Song.title, Song.artist, Song.genre, Song.bpm, Song.key).limit(50).all()
             
-            yield table
+            table = self.query_one("#songs-table")
+            table.clear(columns=True)
+            
+            # Add columns with specific widths for better display
+            table.add_column("Title", width=30)
+            table.add_column("Artist", width=25) 
+            table.add_column("Genre", width=20)
+            table.add_column("BPM", width=8)
+            table.add_column("Key", width=8)
+            
+            if not songs:
+                table.add_row("No songs found", "", "", "", "")
+                return
+            
+            # Add song rows
+            for song in songs:
+                # Format BPM safely
+                bpm_str = ""
+                if song.bpm:
+                    try:
+                        bpm_str = str(int(float(song.bpm)))
+                    except (ValueError, TypeError):
+                        bpm_str = str(song.bpm)
+                
+                table.add_row(
+                    song.title or "Unknown",
+                    song.artist or "Unknown", 
+                    song.genre or "",
+                    bpm_str,
+                    song.key or ""
+                )
+            
+            # Refresh the table layout
+            table.refresh()
+        
+        except Exception as e:
+            # Add error message to table
+            table = self.query_one("#songs-table")
+            table.clear(columns=True)
+            table.add_columns("Error")
+            table.add_row(f"Error loading songs: {str(e)}")
+        
+        finally:
+            if 'db' in locals():
+                db.close()
 
 
 
@@ -69,7 +127,7 @@ class TagSchemaPanel(Static):
             yield Static("TAG SCHEMA", classes="panel-header")
             table = DataTable(id="schema-table")
             table.cursor_type = "row"
-            table.zebra_stripes = False
+            table.zebra_stripes = True
             yield table
     
     def on_mount(self) -> None:
@@ -209,6 +267,8 @@ class DjroidGUI(App):
         background: #0a0a0a;
         color: #e0e0e0;
         width: 100%;
+        padding: 0;
+        margin: 0;
     }
     
     #tags-panel DataTable > .datatable--header {
@@ -220,6 +280,8 @@ class DjroidGUI(App):
     #tags-panel DataTable > .datatable--cursor {
         background: #333333;
         color: #ffffff;
+        margin: 0;
+        padding: 0;
     }
     
     #tags-panel DataTable > .datatable--cursor:hover {
@@ -227,17 +289,32 @@ class DjroidGUI(App):
         color: #ffffff;
     }
     
-    /* Custom zebra stripes since we disabled the built-in ones */
-    #schema-table .datatable--row:odd {
+    /* Override built-in zebra stripes with our colors */
+    #schema-table > .datatable--row-odd {
         background: #111111;
     }
     
-    #schema-table .datatable--row:even {
+    #schema-table > .datatable--row-even {
         background: #0a0a0a;
     }
     
-    #schema-table .datatable--row:hover {
-        background: #333333;
+    /* Ensure hover works on both zebra stripe types */
+    #schema-table > .datatable--row:hover,
+    #schema-table > .datatable--row-odd:hover,
+    #schema-table > .datatable--row-even:hover {
+        background: #333333 !important;
+    }
+    
+    /* Songs panel scrolling - hide scrollbars */
+    #songs-scroll-container {
+        overflow-x: auto;
+        overflow-y: auto;
+        scrollbar-size: 0 0;
+    }
+    
+    #songs-table {
+        min-width: 100%;
+        scrollbar-size: 0 0;
     }
     
     """
