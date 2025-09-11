@@ -93,7 +93,7 @@ class SongsPanel(Static):
             table.add_column("BPM", width=6)
             table.add_column("Key", width=6)
             table.add_column("Quality", width=8)
-            table.add_column("Preview", width=20)
+            table.add_column("Preview", width=14)
             
             if not songs:
                 table.add_row("No songs found", "", "", "", "", "", "")
@@ -398,16 +398,19 @@ class DjroidGUI(App):
     }
     
     #playlists-panel {
-        width: 1fr;
+        width: 0.8fr;
+        min-width: 24;
     }
     
     #songs-panel {
-        width: 2fr;
+        width: 2.6fr;
+        min-width: 60;
         height: 1fr;
     }
     
     #tags-panel {
-        width: 1fr;
+        width: 0.6fr;
+        min-width: 22;
     }
     
     Tree {
@@ -521,13 +524,16 @@ class DjroidGUI(App):
     }
     
     #songs-table {
-        width: 75%;
+        /* Use fractional units for responsive split */
+        width: 4fr;
         height: 1fr;
+        min-width: 70;
     }
     
     #sparkline-panel {
-        width: 25%;
-        min-width: 20;
+        /* Matches fractional split with songs table */
+        width: 1fr;
+        min-width: 18;
         height: 1fr;
         border-left: solid #333;
     }
@@ -536,24 +542,27 @@ class DjroidGUI(App):
         background: #2a2a2a;
         color: #ffffff;
         text-align: center;
-        height: 3;
+        height: 1;
+        padding: 0;
+        margin: 0;
         content-align: center middle;
         text-style: bold;
+        border: none;
     }
     
     #sparkline-container {
         background: #0a0a0a;
         height: 1fr;
-        padding: 1;
+        padding: 0;
     }
     
     /* ============ WAVEFORM SPARKLINE STYLING ============ */
     .waveform-sparkline {
         width: 100%;
-        height: 3;
-        margin: 1 0;
+        height: 1;
+        margin: 0;
         padding: 0;
-        border: solid #333;
+        border: none;
     }
     
     /* ============ SPARKLINE COLOR GRADIENTS ============ */
