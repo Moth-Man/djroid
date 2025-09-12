@@ -5,6 +5,7 @@ from textual.containers import ScrollableContainer
 from textual.reactive import reactive
 from textual.message import Message
 from textual import events
+from textual.scroll_view import ScrollView
 from rich.text import Text
 from ..services.tag_schema import TagSchema
 from ..db.session import SessionLocal
@@ -55,18 +56,19 @@ class SongsPanel(Static):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Static("SONGS", classes="panel-header")
-            with ScrollableContainer(id="songs-scroll-container"):
-                with Horizontal(id="songs-content"):
-                    # Main songs table without Preview column
+            with Horizontal(id="songs-content"):
+                # Main songs table with its own scroll handling
+                with Vertical(id="table-container"):
                     table = DataTable(id="songs-table")
                     table.cursor_type = "row"
                     table.zebra_stripes = True
                     yield table
-                    
-                    # Sparkline panel aligned with table rows
-                    with Vertical(id="sparkline-panel"):
-                        yield Static("Preview", classes="sparkline-header")
-                        with Vertical(id="sparkline-container"):
+                
+                # Sparkline panel that will mirror table scrolling
+                with Vertical(id="sparkline-panel"):
+                    yield Static("Preview", classes="sparkline-header")
+                    with ScrollableContainer(id="sparkline-scroll", can_focus=False):
+                        with Vertical(id="sparkline-content"):
                             pass  # Sparklines will be added dynamically
     
     def on_mount(self) -> None:
@@ -87,24 +89,27 @@ class SongsPanel(Static):
             table.clear(columns=True)
             
             # Add columns with specific widths for better display
-            table.add_column("Title", width=25)
-            table.add_column("Artist", width=20) 
-            table.add_column("Genre", width=15)
-            table.add_column("BPM", width=6)
-            table.add_column("Key", width=6)
-            table.add_column("Quality", width=8)
-            table.add_column("Preview", width=14)
+            table.add_column("Title", width=30)
+            table.add_column("Artist", width=25) 
+            table.add_column("Genre", width=18)
+            table.add_column("BPM", width=8)
+            table.add_column("Key", width=8)
+            table.add_column("Quality", width=10)
+            # table.add_column("Preview", width=14)  # Commented out - using sparkline panel instead
             
             if not songs:
-                table.add_row("No songs found", "", "", "", "", "", "")
+                table.add_row("No songs found", "", "", "", "", "")
                 return
             
             # Store song data for click handling
             self.song_data = []
             
             # Clear and prepare sparkline container
-            sparkline_container = self.query_one("#sparkline-container")
-            sparkline_container.remove_children()
+            sparkline_content = self.query_one("#sparkline-content")
+            sparkline_content.remove_children()
+            
+            # Store sparklines for synchronization
+            self.sparklines = []
             
             # Add song rows and sparklines
             for song in songs:
@@ -165,23 +170,26 @@ class SongsPanel(Static):
                 
                 # Create sparkline with gradient class for separate panel
                 sparkline = Sparkline(waveform_data, summary_function=max, classes=f"waveform-sparkline {pattern_class}")
-                sparkline_container.mount(sparkline)
+                sparkline_content.mount(sparkline)
                 
-                # Create text-based preview for DataTable column
-                preview_text = Text()
-                for i, value in enumerate(waveform_data[:10]):  # Limit to 10 points for table
-                    if value <= 0.3:
-                        bar = "▁"
-                    elif value <= 0.6:
-                        bar = "▅"
-                    else:
-                        bar = "█"
-                    
-                    # Use gradient color based on pattern
-                    color = "green" if pattern_class in ["gradient-6", "gradient-7", "gradient-8", "gradient-9"] else \
-                            "yellow" if pattern_class in ["gradient-4", "gradient-5", "gradient-10"] else "red"
-                    
-                    preview_text.append(bar, style=color)
+                # Store sparkline reference for synchronization
+                self.sparklines.append(sparkline)
+                
+                # Create text-based preview for DataTable column (commented out)
+                # preview_text = Text()
+                # for i, value in enumerate(waveform_data[:10]):  # Limit to 10 points for table
+                #     if value <= 0.3:
+                #         bar = "▁"
+                #     elif value <= 0.6:
+                #         bar = "▅"
+                #     else:
+                #         bar = "█"
+                #     
+                #     # Use gradient color based on pattern
+                #     color = "green" if pattern_class in ["gradient-6", "gradient-7", "gradient-8", "gradient-9"] else \
+                #             "yellow" if pattern_class in ["gradient-4", "gradient-5", "gradient-10"] else "red"
+                #     
+                #     preview_text.append(bar, style=color)
                 
                 table.add_row(
                     song.title or "Unknown",
@@ -190,12 +198,15 @@ class SongsPanel(Static):
                     bpm_str,
                     song.key or "",
                     quality_str,
-                    preview_text,
+                    # preview_text,  # Commented out - using sparkline panel instead
                     key=str(len(self.song_data) - 1)  # Use index as row key
                 )
             
             # Refresh the table layout
             table.refresh()
+            
+            # Initialize sparkline synchronization
+            self.call_after_refresh(self.sync_sparklines_with_table)
         
         except Exception as e:
             # Add error message to table
@@ -232,6 +243,9 @@ class SongsPanel(Static):
                     
                     # Send message to the app to highlight tags
                     self.post_message(SongSelected(selected_song))
+                    
+                # Sync sparklines with table viewport - delay to allow DataTable to update scroll
+                self.set_timer(0.05, self.sync_sparklines_with_table)
             except (IndexError, ValueError, AttributeError):
                 pass
     
@@ -246,8 +260,44 @@ class SongsPanel(Static):
                 if 0 <= cursor_row < len(self.song_data):
                     selected_song = self.song_data[cursor_row]
                     self.post_message(SongSelected(selected_song))
+                    
+                # Sync sparklines with table viewport - delay to allow DataTable scroll update
+                self.set_timer(0.05, self.sync_sparklines_with_table)
             except Exception:
                 pass
+    
+    def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
+        """Handle mouse scroll down events"""
+        if hasattr(self, 'song_data'):
+            self.call_after_refresh(self.sync_sparklines_with_table)
+    
+    def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
+        """Handle mouse scroll up events"""
+        if hasattr(self, 'song_data'):
+            self.call_after_refresh(self.sync_sparklines_with_table)
+    
+    def sync_sparklines_with_table(self):
+        """Synchronize sparkline scroll position with DataTable"""
+        try:
+            table = self.query_one("#songs-table")
+            sparkline_scroll = self.query_one("#sparkline-scroll")
+            
+            if not hasattr(self, 'song_data'):
+                return
+                
+            # Get DataTable's current scroll position
+            table_scroll_offset = table.scroll_offset
+            cursor_row = table.cursor_row
+            
+            # Sync sparkline container to match table's scroll offset
+            sparkline_scroll.scroll_to(
+                x=table_scroll_offset.x, 
+                y=table_scroll_offset.y, 
+                animate=False
+            )
+            
+        except Exception as e:
+            pass
 
 
 
@@ -498,15 +548,15 @@ class DjroidGUI(App):
         background: #333333 !important;
     }
     
-    /* Songs panel scrolling - hide scrollbars */
-    #songs-scroll-container {
-        overflow-x: auto;
-        overflow-y: auto;
-        scrollbar-size: 0 0;
+    /* Songs panel layout */
+    #table-container {
+        height: 1fr;
+        width: 4fr;
     }
     
     #songs-table {
-        min-width: 100%;
+        height: 1fr;
+        width: 100%;
         scrollbar-size: 0 0;
     }
     
@@ -528,14 +578,20 @@ class DjroidGUI(App):
         width: 4fr;
         height: 1fr;
         min-width: 70;
+        max-width: 100%;
     }
     
     #sparkline-panel {
-        /* Matches fractional split with songs table */
         width: 1fr;
-        min-width: 18;
         height: 1fr;
+        min-width: 18;
         border-left: solid #333;
+    }
+    
+    #sparkline-scroll {
+        height: 1fr;
+        overflow-y: auto;
+        scrollbar-size: 0 0;
     }
     
     .sparkline-header {
@@ -550,10 +606,12 @@ class DjroidGUI(App):
         border: none;
     }
     
-    #sparkline-container {
+    #sparkline-content {
         background: #0a0a0a;
-        height: 1fr;
+        height: auto;
         padding: 0;
+        margin: 0;
+        overflow: hidden;
     }
     
     /* ============ WAVEFORM SPARKLINE STYLING ============ */
