@@ -6,11 +6,16 @@ from textual.reactive import reactive
 from textual.message import Message
 from textual import events
 from textual.scroll_view import ScrollView
+from textual.events import MouseScrollDown, MouseScrollUp
+from textual.widget import Widget
 from rich.text import Text
 from ..services.tag_schema import TagSchema
+from ..services.tag import Tag
 from ..db.session import SessionLocal
 from ..db.dao.song_dao import SongDAO
+from ..db.models.song import Song
 from typing import Tuple, List
+from pathlib import Path
 
 
 class SongSelected(Message):
@@ -206,7 +211,7 @@ class SongsPanel(Static):
             table.refresh()
             
             # Initialize sparkline synchronization
-            self.call_after_refresh(self.sync_sparklines_with_table)
+            pass  # Will sync on first interaction
         
         except Exception as e:
             # Add error message to table
@@ -244,8 +249,8 @@ class SongsPanel(Static):
                     # Send message to the app to highlight tags
                     self.post_message(SongSelected(selected_song))
                     
-                # Sync sparklines with table viewport - delay to allow DataTable to update scroll
-                self.set_timer(0.05, self.sync_sparklines_with_table)
+                # Sync sparklines with table viewport
+                self.sync_sparklines_with_table()
             except (IndexError, ValueError, AttributeError):
                 pass
     
@@ -261,42 +266,64 @@ class SongsPanel(Static):
                     selected_song = self.song_data[cursor_row]
                     self.post_message(SongSelected(selected_song))
                     
-                # Sync sparklines with table viewport - delay to allow DataTable scroll update
-                self.set_timer(0.05, self.sync_sparklines_with_table)
+                # Sync sparklines with table viewport
+                self.sync_sparklines_with_table()
             except Exception:
                 pass
     
     def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
         """Handle mouse scroll down events"""
         if hasattr(self, 'song_data'):
-            self.call_after_refresh(self.sync_sparklines_with_table)
+            # Sync sparklines with mouse scroll
+            self.sync_sparklines_with_table()
     
     def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
         """Handle mouse scroll up events"""
         if hasattr(self, 'song_data'):
-            self.call_after_refresh(self.sync_sparklines_with_table)
+            # Sync sparklines with mouse scroll
+            self.sync_sparklines_with_table()
+    
     
     def sync_sparklines_with_table(self):
         """Synchronize sparkline scroll position with DataTable"""
         try:
-            table = self.query_one("#songs-table")
-            sparkline_scroll = self.query_one("#sparkline-scroll")
-            
-            if not hasattr(self, 'song_data'):
+            # Check if we're mounted and have the necessary elements
+            if not self.is_mounted:
                 return
                 
-            # Get DataTable's current scroll position
+            table = self.query_one("#songs-table", expect_type=DataTable)
+            sparkline_scroll = self.query_one("#sparkline-scroll", expect_type=ScrollableContainer)
+            
+            if not hasattr(self, 'song_data') or not self.song_data:
+                return
+                
+            # Get DataTable's current scroll position and cursor
             table_scroll_offset = table.scroll_offset
             cursor_row = table.cursor_row
             
-            # Sync sparkline container to match table's scroll offset
-            sparkline_scroll.scroll_to(
-                x=table_scroll_offset.x, 
-                y=table_scroll_offset.y, 
-                animate=False
-            )
+            # Calculate if we need to adjust for cursor visibility
+            # Get table region to understand visible area
+            table_region = table.region
+            visible_height = max(1, table_region.height - 1)  # Subtract header, ensure min 1
+            
+            # If cursor is at edges and table should scroll, force sync
+            if cursor_row == 0:
+                # At top - ensure sparklines are at top
+                sparkline_scroll.scroll_to(x=0, y=0, animate=False)
+            elif cursor_row >= len(self.song_data) - 1:
+                # At bottom - ensure sparklines are at bottom
+                max_scroll = max(0, len(self.song_data) - visible_height)
+                sparkline_scroll.scroll_to(x=0, y=max_scroll, animate=False)
+            else:
+                # Normal scrolling - match table's scroll position
+                sparkline_scroll.scroll_to(
+                    x=table_scroll_offset.x, 
+                    y=table_scroll_offset.y, 
+                    animate=False
+                )
             
         except Exception as e:
+            # Silently handle any exceptions to avoid breaking the app
             pass
 
 
@@ -310,7 +337,9 @@ class TagSchemaPanel(Static):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.tag_schema = TagSchema()
+        self.tag_service = Tag()
         self.schema_data = {}
+        self.current_song = None
     
     def compose(self) -> ComposeResult:
         with Vertical():
@@ -330,41 +359,43 @@ class TagSchemaPanel(Static):
             self.schema_data = self.tag_schema.load_schema()
             table = self.query_one("#schema-table")
             table.clear(columns=True)
-            
+
             # Show all categories and their values in one flat table - force full width
             table.add_column("Tag Schema", width=50)
-            
+
             # Add blank first row
-            table.add_row("")
-            
+            table.add_row("", key="blank_start")
+
             if not self.schema_data:
                 table.add_row("No tag schema found")
                 return
-            
+
             category_count = len(self.schema_data)
             current_category = 0
-            
+
             for category, values in self.schema_data.items():
                 current_category += 1
-                
+
                 # Add category name in bold
                 category_text = Text(category.title(), style="bold white")
-                table.add_row(category_text)
-                
+                table.add_row(category_text, key=f"category_{category}")
+
                 # Add all values for this category
                 if isinstance(values, list):
-                    for value in values:
+                    # Sort values alphabetically
+                    sorted_values = sorted(values)
+                    for value in sorted_values:
                         # Check if this value should be highlighted
                         if highlighted_tags and category in highlighted_tags:
                             song_values = highlighted_tags[category]
                             if isinstance(song_values, list) and value in song_values:
                                 # Add checkmark and highlight in green
                                 value_text = Text(f"✓ {value}", style="bold green")
-                                table.add_row(value_text)
+                                table.add_row(value_text, key=f"tag_{category}_{value}")
                             else:
-                                table.add_row(f"  {value}")
+                                table.add_row(f"  {value}", key=f"tag_{category}_{value}")
                         else:
-                            table.add_row(f"  {value}")
+                            table.add_row(f"  {value}", key=f"tag_{category}_{value}")
                 elif isinstance(values, dict) and values.get("type") == "rating":
                     max_rating = values.get("max_rating", 5)
                     for i in range(1, max_rating + 1):
@@ -374,19 +405,19 @@ class TagSchemaPanel(Static):
                             if isinstance(song_rating, (int, float)) and int(song_rating) == i:
                                 # Add checkmark and highlight in green
                                 rating_text = Text(f"✓ {i}", style="bold green")
-                                table.add_row(rating_text)
+                                table.add_row(rating_text, key=f"rating_{category}_{i}")
                             else:
-                                table.add_row(f"  {i}")
+                                table.add_row(f"  {i}", key=f"rating_{category}_{i}")
                         else:
-                            table.add_row(f"  {i}")
-                
+                            table.add_row(f"  {i}", key=f"rating_{category}_{i}")
+
                 # Add blank row after each category (except the last one)
                 if current_category < category_count:
-                    table.add_row("")
-            
+                    table.add_row("", key=f"blank_{category}")
+
             # Refresh the table layout to ensure proper column sizing
             table.refresh()
-        
+
         except Exception as e:
             # Add error message to table
             table = self.query_one("#schema-table")
@@ -395,12 +426,124 @@ class TagSchemaPanel(Static):
             table.add_row("")
             table.add_row(f"Error loading schema: {str(e)}")
     
-    def highlight_song_tags(self, song_tags):
+    def highlight_song_tags(self, song_data):
         """Highlight tags in the schema that match the selected song"""
-        if song_tags:
-            self.load_schema_data(song_tags)
+        self.current_song = song_data
+        if song_data and song_data.get('tags'):
+            self.load_schema_data(song_data['tags'])
         else:
             self.load_schema_data()
+
+    def on_data_table_row_selected(self, event) -> None:
+        """Handle tag selection in the schema table"""
+        if event.data_table.id == "schema-table" and self.current_song:
+            try:
+                # Parse the row key to get category and value
+                row_key = event.row_key.value
+
+                # Skip blank rows and category headers
+                if row_key.startswith("blank_") or row_key.startswith("category_"):
+                    return
+
+                # Handle tag values
+                if row_key.startswith("tag_"):
+                    # Extract category and value from key like "tag_category_value"
+                    parts = row_key.split("_", 2)
+                    if len(parts) >= 3:
+                        category = parts[1]
+                        value = parts[2]
+                        self.toggle_tag(category, value)
+
+                # Handle rating values
+                elif row_key.startswith("rating_"):
+                    # Extract category and rating from key like "rating_category_5"
+                    parts = row_key.split("_", 2)
+                    if len(parts) >= 3:
+                        category = parts[1]
+                        rating = parts[2]
+                        self.set_rating(category, rating)
+
+            except Exception as e:
+                pass  # Silently handle errors
+
+    def toggle_tag(self, category: str, value: str):
+        """Toggle a tag value for the current song"""
+        if not self.current_song:
+            return
+
+        try:
+            file_path = Path(self.current_song['filepath'])
+            current_tags = self.current_song.get('tags', {})
+
+            # Check if the tag is currently set
+            is_currently_set = False
+            if category in current_tags:
+                song_values = current_tags[category]
+                if isinstance(song_values, list) and value in song_values:
+                    is_currently_set = True
+
+            if is_currently_set:
+                # Remove the tag
+                success = self.tag_service.remove_tag_from_file(file_path, category, value)
+            else:
+                # Add the tag
+                success = self.tag_service.add_tag_to_file(file_path, category, value)
+
+            if success:
+                # Update the database
+                self.update_song_tags_in_database()
+
+        except Exception as e:
+            pass  # Silently handle errors
+
+    def set_rating(self, category: str, rating: str):
+        """Set a rating value for the current song"""
+        if not self.current_song:
+            return
+
+        try:
+            file_path = Path(self.current_song['filepath'])
+
+            # Use the rating method from tag service
+            success = self.tag_service.set_rating_value(file_path, category, rating)
+
+            if success:
+                # Update the database
+                self.update_song_tags_in_database()
+
+        except Exception as e:
+            pass  # Silently handle errors
+
+    def update_song_tags_in_database(self):
+        """Update the song's tags in the database after file modification"""
+        if not self.current_song:
+            return
+
+        try:
+            file_path = Path(self.current_song['filepath'])
+
+            # Build new tags JSON from the file
+            new_tags = self.tag_service.build_tags_json_from_file(file_path)
+
+            # Update the database
+            db = SessionLocal()
+            try:
+                song = db.query(Song).filter(Song.id == self.current_song['id']).first()
+                if song:
+                    song.tags = new_tags
+                    db.commit()
+
+                    # Update the current song data
+                    self.current_song['tags'] = new_tags
+
+                    # Refresh the display
+                    self.highlight_song_tags(self.current_song)
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            pass  # Silently handle errors
     
 
 
@@ -513,39 +656,58 @@ class DjroidGUI(App):
         padding: 0;
         margin: 0;
     }
-    
+
     #tags-panel DataTable > .datatable--header {
         background: #2a2a2a;
         color: #e0e0e0;
         text-style: bold;
     }
-    
+
     #tags-panel DataTable > .datatable--cursor {
         background: #333333;
         color: #ffffff;
         margin: 0;
         padding: 0;
     }
-    
+
     #tags-panel DataTable > .datatable--cursor:hover {
         background: #444444;
         color: #ffffff;
     }
-    
+
     /* Override built-in zebra stripes with our colors */
     #schema-table > .datatable--row-odd {
         background: #111111;
     }
-    
+
     #schema-table > .datatable--row-even {
         background: #0a0a0a;
     }
-    
+
     /* Ensure hover works on both zebra stripe types */
     #schema-table > .datatable--row:hover,
     #schema-table > .datatable--row-odd:hover,
     #schema-table > .datatable--row-even:hover {
         background: #333333 !important;
+    }
+
+    /* Make clickable tag rows more obvious - removed cursor since Textual doesn't support it */
+
+    /* Style for selected/active tags in green */
+    #schema-table .tag-selected {
+        color: #00ff00 !important;
+        text-style: bold;
+    }
+
+    /* Style for unselected tags */
+    #schema-table .tag-unselected {
+        color: #e0e0e0;
+    }
+
+    /* Hover effect for tag values specifically */
+    #schema-table > .datatable--row:hover .tag-unselected,
+    #schema-table > .datatable--row:hover .tag-selected {
+        background: #555555;
     }
     
     /* Songs panel layout */
@@ -684,10 +846,10 @@ class DjroidGUI(App):
         try:
             # Get the tag schema panel
             tag_panel = self.query_one("#tags-panel")
-            
+
             # Highlight the tags from the selected song
-            tag_panel.highlight_song_tags(event.song_data.get('tags'))
-            
+            tag_panel.highlight_song_tags(event.song_data)
+
         except Exception as e:
             pass  # Silently handle any errors
 
