@@ -55,79 +55,91 @@ class PlaylistPanel(Static):
 
 class SongsPanel(Static):
     """Middle panel showing songs list."""
-    
-    
-    
+
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Static("SONGS", classes="panel-header")
             with Horizontal(id="songs-content"):
-                # Main songs table with its own scroll handling
+                # Main songs table with fixed height (no scrolling)
                 with Vertical(id="table-container"):
                     table = DataTable(id="songs-table")
                     table.cursor_type = "row"
                     table.zebra_stripes = True
                     yield table
-                
-                # Sparkline panel that will mirror table scrolling
+
+                # Sparkline panel (fixed height, no scrolling)
                 with Vertical(id="sparkline-panel"):
                     yield Static("Preview", classes="sparkline-header")
-                    with ScrollableContainer(id="sparkline-scroll", can_focus=False):
-                        with Vertical(id="sparkline-content"):
-                            pass  # Sparklines will be added dynamically
-    
+                    with Vertical(id="sparkline-content"):
+                        pass  # Sparklines will be added dynamically
+
+            # Pagination controls at bottom
+            with Horizontal(id="pagination-controls"):
+                yield Button("← Prev", id="btn-prev", classes="pagination-btn")
+                yield Static(id="page-info", classes="page-info")
+                yield Button("Next →", id="btn-next", classes="pagination-btn")
+
     def on_mount(self) -> None:
         """Called when the widget is mounted to the DOM."""
+        self.current_page = 0
+        self.total_songs = 0
+        self.all_songs = []
+        self.songs_per_page = 15  # Default, will be recalculated after mounting
+
+        # Sort state tracking
+        self.sort_column = None  # Current column being sorted
+        self.sort_order = None  # "asc", "desc", or None for no sort
+
+        # Column configuration: column_index -> (column_name, data_key, is_numeric)
+        self.column_config = {
+            0: ("Title", "title", False),
+            1: ("Artist", "artist", False),
+            2: ("Genre", "genre", False),
+            3: ("BPM", "bpm", True),
+            4: ("Key", "key", False),
+            5: ("Quality", "quality_score", True),
+        }
+
+        self.calculate_songs_per_page()
         self.load_songs()
+
+    def calculate_songs_per_page(self) -> None:
+        """Calculate how many songs can fit based on available height"""
+        try:
+            if not self.is_mounted:
+                return
+
+            # Get the songs-content container which has the actual available space
+            songs_content = self.query_one("#songs-content")
+
+            # Calculate available height for songs
+            # Panel height - header (3) - pagination controls (3)
+            available_height = self.size.height - 6  # 3 for header + 3 for pagination
+
+            # Each song row takes 1 line in the table
+            # Account for the table header (1 line)
+            available_for_rows = available_height - 1
+
+            # Ensure we have at least 1 song per page
+            self.songs_per_page = max(1, available_for_rows)
+        except Exception:
+            # Fall back to default if calculation fails
+            self.songs_per_page = 15
     
     def load_songs(self):
-        """Load and display songs from the database"""
+        """Load all songs from database and display the current page"""
         try:
             # Get database session
             db = SessionLocal()
-            
-            # Query songs with all fields we need including ID, tags, and audio analysis
+
+            # Query ALL songs to populate self.all_songs
             from djroid.db.models.song import Song
-            songs = db.query(Song.id, Song.title, Song.artist, Song.genre, Song.bpm, Song.key, Song.tags, Song.filepath, Song.quality_score, Song.waveform_preview).limit(50).all()
-            
-            table = self.query_one("#songs-table")
-            table.clear(columns=True)
-            
-            # Add columns with specific widths for better display
-            table.add_column("Title", width=30)
-            table.add_column("Artist", width=25) 
-            table.add_column("Genre", width=18)
-            table.add_column("BPM", width=8)
-            table.add_column("Key", width=8)
-            table.add_column("Quality", width=10)
-            # table.add_column("Preview", width=14)  # Commented out - using sparkline panel instead
-            
-            if not songs:
-                table.add_row("No songs found", "", "", "", "", "")
-                return
-            
-            # Store song data for click handling
-            self.song_data = []
-            
-            # Clear and prepare sparkline container
-            sparkline_content = self.query_one("#sparkline-content")
-            sparkline_content.remove_children()
-            
-            # Store sparklines for synchronization
-            self.sparklines = []
-            
-            # Add song rows and sparklines
+            songs = db.query(Song.id, Song.title, Song.artist, Song.genre, Song.bpm, Song.key, Song.tags, Song.filepath, Song.quality_score, Song.waveform_preview).all()
+
+            # Store all songs in memory for pagination
+            self.all_songs = []
             for song in songs:
-                # Format BPM safely
-                bpm_str = ""
-                if song.bpm:
-                    try:
-                        bpm_str = str(int(float(song.bpm)))
-                    except (ValueError, TypeError):
-                        bpm_str = str(song.bpm)
-                
-                # Store full song data
-                self.song_data.append({
+                self.all_songs.append({
                     'id': song.id,
                     'title': song.title,
                     'artist': song.artist,
@@ -139,90 +151,153 @@ class SongsPanel(Static):
                     'quality_score': song.quality_score,
                     'waveform_preview': song.waveform_preview
                 })
-                
-                # Format quality score
-                quality_str = ""
-                if song.quality_score is not None:
-                    quality_str = f"{song.quality_score:.2f}"
-                
-                # Create sparkline for separate panel
-                # If no quality score, generate a varied one based on song index for demo
-                quality_score = song.quality_score
-                if quality_score is None:
-                    # Create varied quality scores for demo (cycle through ranges)
-                    song_index = len(self.song_data)
-                    if song_index % 3 == 0:
-                        quality_score = 0.9  # High quality
-                    elif song_index % 3 == 1:
-                        quality_score = 0.7  # Medium quality  
-                    else:
-                        quality_score = 0.4  # Low quality
-                
-                # Generate waveform data like the example
-                from math import sin
-                waveform_data = song.waveform_preview or [abs(sin(x / 3.14)) for x in range(0, 360, 25)][:15]
-                
-                # Create single sparkline with gradient colors
-                # Use the current song index (before adding to song_data)
-                song_index = len(self.song_data)
-                
-                # Cycle through different gradient patterns
-                gradient_patterns = [
-                    "gradient-1", "gradient-2", "gradient-3", "gradient-4", "gradient-5",
-                    "gradient-6", "gradient-7", "gradient-8", "gradient-9", "gradient-10"
-                ]
-                pattern_class = gradient_patterns[song_index % len(gradient_patterns)]
-                
-                # Create sparkline with gradient class for separate panel
-                sparkline = Sparkline(waveform_data, summary_function=max, classes=f"waveform-sparkline {pattern_class}")
-                sparkline_content.mount(sparkline)
-                
-                # Store sparkline reference for synchronization
-                self.sparklines.append(sparkline)
-                
-                # Create text-based preview for DataTable column (commented out)
-                # preview_text = Text()
-                # for i, value in enumerate(waveform_data[:10]):  # Limit to 10 points for table
-                #     if value <= 0.3:
-                #         bar = "▁"
-                #     elif value <= 0.6:
-                #         bar = "▅"
-                #     else:
-                #         bar = "█"
-                #     
-                #     # Use gradient color based on pattern
-                #     color = "green" if pattern_class in ["gradient-6", "gradient-7", "gradient-8", "gradient-9"] else \
-                #             "yellow" if pattern_class in ["gradient-4", "gradient-5", "gradient-10"] else "red"
-                #     
-                #     preview_text.append(bar, style=color)
-                
-                table.add_row(
-                    song.title or "Unknown",
-                    song.artist or "Unknown", 
-                    song.genre or "",
-                    bpm_str,
-                    song.key or "",
-                    quality_str,
-                    # preview_text,  # Commented out - using sparkline panel instead
-                    key=str(len(self.song_data) - 1)  # Use index as row key
-                )
-            
-            # Refresh the table layout
-            table.refresh()
-            
-            # Initialize sparkline synchronization
-            pass  # Will sync on first interaction
-        
+
+            # Keep a backup of original order for resetting sort
+            self.original_songs = [song.copy() for song in self.all_songs]
+
+            self.total_songs = len(self.all_songs)
+            self.current_page = 0
+
+            # Reset sorting to original order
+            self.sort_column = None
+            self.sort_order = None
+
+            # Display the first page
+            self.display_page()
+
         except Exception as e:
             # Add error message to table
             table = self.query_one("#songs-table")
             table.clear(columns=True)
             table.add_column("Error")
             table.add_row(f"Error loading songs: {str(e)}")
-        
+
         finally:
             if 'db' in locals():
                 db.close()
+
+    def display_page(self):
+        """Display songs for the current page"""
+        # Calculate pagination boundaries
+        start_idx = self.current_page * self.songs_per_page
+        end_idx = start_idx + self.songs_per_page
+        page_songs = self.all_songs[start_idx:end_idx]
+
+        # Clear table and sparklines
+        table = self.query_one("#songs-table")
+        table.clear(columns=True)
+
+        # Add columns
+        table.add_column("Title", width=30)
+        table.add_column("Artist", width=25)
+        table.add_column("Genre", width=18)
+        table.add_column("BPM", width=8)
+        table.add_column("Key", width=8)
+        table.add_column("Quality", width=10)
+
+        # Clear sparklines
+        sparkline_content = self.query_one("#sparkline-content")
+        sparkline_content.remove_children()
+
+        # Store song data for this page
+        self.song_data = []
+        self.sparklines = []
+
+        if not page_songs:
+            table.add_row("No songs found", "", "", "", "", "")
+            self.update_page_info()
+            return
+
+        # Add songs and sparklines
+        for song in page_songs:
+            # Format BPM
+            bpm_str = ""
+            if song['bpm']:
+                try:
+                    bpm_str = str(int(float(song['bpm'])))
+                except (ValueError, TypeError):
+                    bpm_str = str(song['bpm'])
+
+            # Format quality score
+            quality_str = ""
+            if song['quality_score'] is not None:
+                quality_str = f"{song['quality_score']:.2f}"
+
+            # Store song data with page-relative index
+            self.song_data.append(song)
+
+            # Generate waveform data
+            from math import sin
+            waveform_data = song['waveform_preview'] or [abs(sin(x / 3.14)) for x in range(0, 360, 25)][:15]
+
+            # Create sparkline with rotating color gradient
+            song_index = len(self.song_data)
+            gradient_patterns = [
+                "gradient-1", "gradient-2", "gradient-3", "gradient-4", "gradient-5",
+                "gradient-6", "gradient-7", "gradient-8", "gradient-9", "gradient-10"
+            ]
+            pattern_class = gradient_patterns[song_index % len(gradient_patterns)]
+
+            sparkline = Sparkline(waveform_data, summary_function=max, classes=f"waveform-sparkline {pattern_class}")
+            sparkline_content.mount(sparkline)
+            self.sparklines.append(sparkline)
+
+            # Add table row with page-relative index as key
+            table.add_row(
+                song['title'] or "Unknown",
+                song['artist'] or "Unknown",
+                song['genre'] or "",
+                bpm_str,
+                song['key'] or "",
+                quality_str,
+                key=str(song_index - 1)
+            )
+
+        # Refresh the table
+        table.refresh()
+
+        # Update pagination controls
+        self.update_page_info()
+
+    def update_page_info(self):
+        """Update the page info display and enable/disable buttons"""
+        page_info = self.query_one("#page-info")
+        start_song = self.current_page * self.songs_per_page + 1
+        end_song = min((self.current_page + 1) * self.songs_per_page, self.total_songs)
+        page_info.update(f"[{start_song}-{end_song} of {self.total_songs}]")
+
+        # Update button states
+        prev_btn = self.query_one("#btn-prev")
+        next_btn = self.query_one("#btn-next")
+
+        prev_btn.disabled = self.current_page == 0
+        next_btn.disabled = end_song >= self.total_songs
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle pagination button presses"""
+        if event.button.id == "btn-prev":
+            if self.current_page > 0:
+                self.current_page -= 1
+                self.display_page()
+        elif event.button.id == "btn-next":
+            max_page = (self.total_songs - 1) // self.songs_per_page
+            if self.current_page < max_page:
+                self.current_page += 1
+                self.display_page()
+
+    def on_resize(self) -> None:
+        """Handle window resize events"""
+        old_songs_per_page = self.songs_per_page
+        self.calculate_songs_per_page()
+
+        # If the number of songs per page changed, recalculate pagination
+        if old_songs_per_page != self.songs_per_page and hasattr(self, 'all_songs') and self.all_songs:
+            # Check if current page is still valid
+            max_page = (self.total_songs - 1) // self.songs_per_page
+            if self.current_page > max_page:
+                self.current_page = max(0, max_page)
+
+            self.display_page()
     
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle song row selection (click)"""
@@ -254,6 +329,70 @@ class SongsPanel(Static):
             except (IndexError, ValueError, AttributeError):
                 pass
     
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        """Handle column header clicks for sorting"""
+        try:
+            column_index = event.column_index
+            if column_index not in self.column_config:
+                return
+
+            _, data_key, is_numeric = self.column_config[column_index]
+
+            # Determine the new sort order
+            if self.sort_column == column_index:
+                # Same column clicked again - cycle through sort states
+                if self.sort_order == "asc":
+                    self.sort_order = "desc"
+                elif self.sort_order == "desc":
+                    # Third click - remove sorting
+                    self.sort_column = None
+                    self.sort_order = None
+                else:
+                    self.sort_order = "asc"
+            else:
+                # New column clicked - start with ascending
+                self.sort_column = column_index
+                if is_numeric:
+                    self.sort_order = "asc"
+                else:
+                    self.sort_order = "asc"  # Alphabetical is ascending
+
+            # Apply the sort to all_songs
+            self.apply_sort()
+
+            # Reset to first page and display
+            self.current_page = 0
+            self.display_page()
+
+        except Exception as e:
+            pass
+
+    def apply_sort(self) -> None:
+        """Apply current sort settings to all_songs"""
+        # If no sort, restore original order
+        if self.sort_column is None or self.sort_order is None:
+            if hasattr(self, 'original_songs'):
+                self.all_songs = [song.copy() for song in self.original_songs]
+            return
+
+        _, data_key, is_numeric = self.column_config[self.sort_column]
+
+        try:
+            if is_numeric:
+                # Sort numeric columns
+                self.all_songs.sort(
+                    key=lambda x: (x[data_key] is None, x[data_key] if x[data_key] is not None else 0),
+                    reverse=(self.sort_order == "desc")
+                )
+            else:
+                # Sort string columns alphabetically
+                self.all_songs.sort(
+                    key=lambda x: (x[data_key] is None, str(x[data_key] or "").lower()),
+                    reverse=(self.sort_order == "desc")
+                )
+        except Exception:
+            pass
+
     def on_key(self, event) -> None:
         """Handle key events to catch arrow navigation"""
         if event.key in ["up", "down"] and hasattr(self, 'song_data'):
@@ -261,70 +400,12 @@ class SongsPanel(Static):
             try:
                 table = self.query_one("#songs-table")
                 cursor_row = table.cursor_row
-                
+
                 if 0 <= cursor_row < len(self.song_data):
                     selected_song = self.song_data[cursor_row]
                     self.post_message(SongSelected(selected_song))
-                    
-                # Sync sparklines with table viewport
-                self.sync_sparklines_with_table()
             except Exception:
                 pass
-    
-    def on_mouse_scroll_down(self, event: events.MouseScrollDown) -> None:
-        """Handle mouse scroll down events"""
-        if hasattr(self, 'song_data'):
-            # Sync sparklines with mouse scroll
-            self.sync_sparklines_with_table()
-    
-    def on_mouse_scroll_up(self, event: events.MouseScrollUp) -> None:
-        """Handle mouse scroll up events"""
-        if hasattr(self, 'song_data'):
-            # Sync sparklines with mouse scroll
-            self.sync_sparklines_with_table()
-    
-    
-    def sync_sparklines_with_table(self):
-        """Synchronize sparkline scroll position with DataTable"""
-        try:
-            # Check if we're mounted and have the necessary elements
-            if not self.is_mounted:
-                return
-                
-            table = self.query_one("#songs-table", expect_type=DataTable)
-            sparkline_scroll = self.query_one("#sparkline-scroll", expect_type=ScrollableContainer)
-            
-            if not hasattr(self, 'song_data') or not self.song_data:
-                return
-                
-            # Get DataTable's current scroll position and cursor
-            table_scroll_offset = table.scroll_offset
-            cursor_row = table.cursor_row
-            
-            # Calculate if we need to adjust for cursor visibility
-            # Get table region to understand visible area
-            table_region = table.region
-            visible_height = max(1, table_region.height - 1)  # Subtract header, ensure min 1
-            
-            # If cursor is at edges and table should scroll, force sync
-            if cursor_row == 0:
-                # At top - ensure sparklines are at top
-                sparkline_scroll.scroll_to(x=0, y=0, animate=False)
-            elif cursor_row >= len(self.song_data) - 1:
-                # At bottom - ensure sparklines are at bottom
-                max_scroll = max(0, len(self.song_data) - visible_height)
-                sparkline_scroll.scroll_to(x=0, y=max_scroll, animate=False)
-            else:
-                # Normal scrolling - match table's scroll position
-                sparkline_scroll.scroll_to(
-                    x=table_scroll_offset.x, 
-                    y=table_scroll_offset.y, 
-                    animate=False
-                )
-            
-        except Exception as e:
-            # Silently handle any exceptions to avoid breaking the app
-            pass
 
 
 
@@ -750,10 +831,9 @@ class DjroidGUI(App):
         border-left: solid #333;
     }
     
-    #sparkline-scroll {
-        height: 1fr;
-        overflow-y: auto;
-        scrollbar-size: 0 0;
+    #sparkline-content {
+        width: 100%;
+        height: auto;
     }
     
     .sparkline-header {
@@ -821,7 +901,45 @@ class DjroidGUI(App):
     /* Default fallback */
     .waveform-sparkline > .sparkline--max-color { color: $success; }
     .waveform-sparkline > .sparkline--min-color { color: $warning; }
-    
+
+    /* ============ PAGINATION CONTROLS ============ */
+    #pagination-controls {
+        height: 3;
+        background: #1a1a1a;
+        border-top: solid #333;
+        padding: 0 1;
+        align: center middle;
+        content-align: center middle;
+    }
+
+    .pagination-btn {
+        width: 1fr;
+        margin: 0 1;
+        background: #2a2a2a;
+        color: #e0e0e0;
+        border: solid #444;
+    }
+
+    .pagination-btn:hover {
+        background: #3a3a3a;
+    }
+
+    .pagination-btn:disabled {
+        background: #1a1a1a;
+        color: #555555;
+        border: solid #333;
+    }
+
+    #page-info {
+        width: auto;
+        align: center middle;
+        content-align: center middle;
+        background: #1a1a1a;
+        color: #00ff00;
+        text-style: bold;
+        margin: 0 1;
+    }
+
     """
     
     def compose(self) -> ComposeResult:
