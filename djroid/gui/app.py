@@ -26,61 +26,127 @@ class SongSelected(Message):
         self.song_data = song_data
 
 
-class ChatBox(Static):
-    """Chat input box at the top of the application."""
-    
+class TitleBar(Static):
+    """Title bar at the very top of the application."""
+
     def compose(self) -> ComposeResult:
-        yield Input(placeholder="Chat with djroid...", id="chat-input")
+        yield Static("dj-en v1.0.0", id="app-title")
+
+
+class NavigationHeader(Static):
+    """Navigation header with tabs for different views."""
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="nav-buttons"):
+            yield Button("Library", id="btn-library", variant="primary")
+            yield Button("Chat", id="btn-chat")
+            yield Button("Settings", id="btn-settings")
+
+
+class CommandPalette(Static):
+    """Command palette footer showing available commands."""
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            "[bold #888888]^l[/] library   [bold #888888]^c[/] chat   "
+            "[bold #888888]^s[/] settings   [bold #888888]^h[/] help   [bold #888888]^q[/] quit",
+            id="command-palette-text"
+        )
+
+
+class SongsDataTable(DataTable):
+    """Custom DataTable for songs that highlights rows with no tags."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.no_tags_row_keys = set()
+
+    def render_line(self, y: int):
+        """Render a line, applying warning styling to rows with no tags."""
+        from rich.style import Style
+
+        strip = super().render_line(y)
+
+        # Only try to style if we have rows with no tags
+        if not self.no_tags_row_keys:
+            return strip
+
+        try:
+            # Get the row key for this line using the private method
+            # This returns the RowKey for the row being rendered
+            row_key, _ = self._get_offsets(y)
+            row_key_str = str(row_key.value)
+
+            # Check if this row key is in our no-tags set
+            # Convert RowKey to string for comparison with string keys in the set
+            if row_key_str in self.no_tags_row_keys:
+                # Check if this is the currently highlighted/selected row
+                # If so, let the default blue selection styling show through
+                if self.cursor_row is not None:
+                    # Get the row index from the row key to compare with cursor_row
+                    row_index = list(self.rows.keys()).index(row_key) if row_key in self.rows else -1
+                    if row_index == self.cursor_row:
+                        # This row is selected, use default styling (blue highlight)
+                        return strip
+
+                # Apply warning styling like Posting's "read-only" button
+                # Use warning colors similar to $warning-muted (background) and $text-warning (foreground)
+                from rich.segment import Segment
+                from textual.strip import Strip
+
+                # Colors based on Textual's warning theme:
+                # - Background: dark muted orange (similar to warning color with low opacity on dark bg)
+                # - Text: bright warning orange for good contrast
+                bg_color = "#3d2817"  # dark muted warning background ($warning-muted equivalent)
+                text_color = "#ffb454"  # bright warning text ($text-warning equivalent)
+
+                new_segments = [
+                    Segment(seg.text, Style.from_meta(seg.style.meta if seg.style else {}) + Style(bgcolor=bg_color, color=text_color))
+                    for seg in strip
+                ]
+                strip = Strip(new_segments)
+        except (IndexError, AttributeError, ValueError, KeyError, LookupError) as e:
+            # Silently ignore errors for header rows or invalid y coordinates
+            pass
+
+        return strip
 
 
 class PlaylistPanel(Static):
     """Left panel showing playlist tree structure."""
-    
+
+    def on_mount(self) -> None:
+        """Set the border title when mounted."""
+        self.border_title = "Playlists"
+
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("📁 PLAYLISTSSSSS", classes="panel-header")
+            yield Static("PLAYLISTS", classes="panel-header")
             tree = Tree("Root")
             tree.root.expand()
-            
+
             # Add some sample playlists
-            tree.root.add_leaf("🎵 House Classics")
-            tree.root.add_leaf("🎶 Tech House")
-            tree.root.add_leaf("🎧 Deep House")
-            favorites = tree.root.add("⭐ Favorites")
+            tree.root.add_leaf("House Classics")
+            tree.root.add_leaf("Tech House")
+            tree.root.add_leaf("Deep House")
+            favorites = tree.root.add("Favorites")
             favorites.add_leaf("Top 100")
             favorites.add_leaf("Recent Finds")
-            
+
             yield tree
 
 
 class SongsPanel(Static):
     """Middle panel showing songs list."""
 
-    def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Static("SONGS", classes="panel-header")
-            with Horizontal(id="songs-content"):
-                # Main songs table with fixed height (no scrolling)
-                with Vertical(id="table-container"):
-                    table = DataTable(id="songs-table")
-                    table.cursor_type = "row"
-                    table.zebra_stripes = True
-                    yield table
-
-                # Sparkline panel (fixed height, no scrolling)
-                with Vertical(id="sparkline-panel"):
-                    yield Static("Preview", classes="sparkline-header")
-                    with Vertical(id="sparkline-content"):
-                        pass  # Sparklines will be added dynamically
-
-            # Pagination controls at bottom
-            with Horizontal(id="pagination-controls"):
-                yield Button("← Prev", id="btn-prev", classes="pagination-btn")
-                yield Static(id="page-info", classes="page-info")
-                yield Button("Next →", id="btn-next", classes="pagination-btn")
-
     def on_mount(self) -> None:
-        """Called when the widget is mounted to the DOM."""
+        """Set the border title when mounted."""
+        self.border_title = "Collection"
+        # Call parent on_mount logic after setting border_title
+        self._setup_songs()
+
+    def _setup_songs(self) -> None:
+        """Setup songs after mount."""
         self.current_page = 0
         self.total_songs = 0
         self.all_songs = []
@@ -102,6 +168,29 @@ class SongsPanel(Static):
 
         self.calculate_songs_per_page()
         self.load_songs()
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static("SONGS", classes="panel-header")
+            with Horizontal(id="songs-content"):
+                # Main songs table with fixed height (no scrolling)
+                with Vertical(id="table-container"):
+                    table = SongsDataTable(id="songs-table")
+                    table.cursor_type = "row"
+                    table.zebra_stripes = True
+                    yield table
+
+                # Sparkline panel (fixed height, no scrolling)
+                with Vertical(id="sparkline-panel"):
+                    yield Static("Preview", classes="sparkline-header")
+                    with Vertical(id="sparkline-content"):
+                        pass  # Sparklines will be added dynamically
+
+            # Pagination controls at bottom
+            with Horizontal(id="pagination-controls"):
+                yield Button("← Prev", id="btn-prev", classes="pagination-btn")
+                yield Static(id="page-info", classes="page-info")
+                yield Button("Next →", id="btn-next", classes="pagination-btn")
 
     def calculate_songs_per_page(self) -> None:
         """Calculate how many songs can fit based on available height"""
@@ -176,6 +265,37 @@ class SongsPanel(Static):
             if 'db' in locals():
                 db.close()
 
+    def _check_song_has_tags(self, song: dict) -> bool:
+        """Check if a song has any tags from the tag schema.
+
+        A song is considered to have tags if the tags field is a non-empty dict
+        with at least one category having values.
+        Tags could be None, empty dict {}, or a populated dict.
+        """
+        tags = song.get('tags')
+
+        # If tags is None or not a dict, it has no tags
+        if tags is None or not isinstance(tags, dict):
+            return False
+
+        # If tags is an empty dict, it has no tags
+        if len(tags) == 0:
+            return False
+
+        # Check if any of the tag values are non-empty
+        # Tags dict structure: {"category": [...values...], ...}
+        for category, value in tags.items():
+            if value is not None:
+                if isinstance(value, (list, str)) and len(value) > 0:
+                    return True
+                elif isinstance(value, dict) and value.get("type") == "rating":
+                    # Rating category - check if a value is set
+                    return True
+                elif isinstance(value, (int, float)) and value > 0:
+                    return True
+
+        return False
+
     def display_page(self):
         """Display songs for the current page"""
         # Calculate pagination boundaries
@@ -186,6 +306,7 @@ class SongsPanel(Static):
         # Clear table and sparklines
         table = self.query_one("#songs-table")
         table.clear(columns=True)
+        table.no_tags_row_keys.clear()  # Clear the no-tags tracking
 
         # Add columns
         table.add_column("Title", width=30)
@@ -202,6 +323,8 @@ class SongsPanel(Static):
         # Store song data for this page
         self.song_data = []
         self.sparklines = []
+        self.row_keys = []  # Track row keys for styling
+        self.no_tags_row_keys = set()  # Track rows with no tags
 
         if not page_songs:
             table.add_row("No songs found", "", "", "", "", "")
@@ -243,6 +366,16 @@ class SongsPanel(Static):
             self.sparklines.append(sparkline)
 
             # Add table row with page-relative index as key
+            row_key = str(song_index - 1)
+            self.row_keys.append((row_key, song))  # Store key and song data
+
+            # Check if song has tags and track it
+            has_tags = self._check_song_has_tags(song)
+
+            if not has_tags:
+                self.no_tags_row_keys.add(row_key)
+                table.no_tags_row_keys.add(row_key)  # Add to table's tracking
+
             table.add_row(
                 song['title'] or "Unknown",
                 song['artist'] or "Unknown",
@@ -250,7 +383,7 @@ class SongsPanel(Static):
                 bpm_str,
                 song['key'] or "",
                 quality_str,
-                key=str(song_index - 1)
+                key=row_key
             )
 
         # Refresh the table
@@ -424,7 +557,6 @@ class TagSchemaPanel(Static):
     
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("TAG SCHEMA", classes="panel-header")
             table = DataTable(id="schema-table")
             table.cursor_type = "row"
             table.zebra_stripes = True
@@ -432,6 +564,7 @@ class TagSchemaPanel(Static):
     
     def on_mount(self) -> None:
         """Called when the widget is mounted to the DOM."""
+        self.border_title = "Tag Schema"
         self.load_schema_data()
                 
     def load_schema_data(self, highlighted_tags=None):
@@ -442,7 +575,7 @@ class TagSchemaPanel(Static):
             table.clear(columns=True)
 
             # Show all categories and their values in one flat table - force full width
-            table.add_column("Tag Schema", width=50)
+            table.add_column("", width=50)
 
             # Add blank first row
             table.add_row("", key="blank_start")
@@ -630,135 +763,231 @@ class TagSchemaPanel(Static):
 
 class DjroidGUI(App):
     """Main Djroid GUI application."""
-    
+
     CSS = """
+    * {
+        scrollbar-color: #555555 10%;
+        scrollbar-color-hover: #777777 80%;
+        scrollbar-color-active: #888888;
+        scrollbar-background: #1a1a1a;
+        scrollbar-background-hover: #1a1a1a;
+        scrollbar-background-active: #1a1a1a;
+        scrollbar-size-vertical: 1;
+    }
+
     Screen {
         background: #0a0a0a;
-        color: #e0e0e0;
+        color: #cccccc;
     }
-    
-    #chat-container {
-        height: 3;
-        background: #1a1a1a;
-        border: solid #333333;
-        margin: 1;
-    }
-    
-    #main-container {
-        height: 1fr;
+
+    #title-bar {
+        width: 100%;
+        height: auto;
         background: #0f0f0f;
+        border-bottom: solid #1a1a1a;
+        padding: 0;
+        margin: 0;
     }
-    
-    #chat-input {
-        background: #1a1a1a;
-        color: #e0e0e0;
+
+    #app-title {
+        width: 100%;
+        height: auto;
+        background: #0f0f0f;
+        color: #555555;
+        text-align: left;
+        padding: 0 1;
+        content-align: left middle;
         border: none;
     }
-    
-    .panel {
-        border: solid #333333;
-        margin: 1;
+
+    #nav-header {
+        height: auto;
         background: #0a0a0a;
+        border-bottom: solid #1a1a1a;
+        margin: 0;
+        padding: 0 1;
+        align: left middle;
+        content-align: left middle;
     }
-    
-    
-    .panel-header {
-        background: #2a2a2a;
-        color: #ffffff;
-        text-align: center;
-        height: 3;
+
+    #nav-buttons {
+        width: auto;
+        height: 1;
+        align: left middle;
+    }
+
+    #nav-buttons Button {
+        margin: 0 2;
+        background: transparent;
+        color: #888888;
+        border: none;
+        &:hover {
+            background: transparent;
+            color: #aaaaaa;
+        }
+        &:focus {
+            background: #1a1a1a;
+            color: #cccccc;
+            border: none;
+        }
+    }
+
+    #command-palette {
+        height: auto;
+        background: #0f0f0f;
+        border-top: solid #1a1a1a;
+        margin: 0;
+        padding: 0 1;
+        align: center middle;
         content-align: center middle;
-        text-style: bold;
     }
-    
+
+    #command-palette-text {
+        width: 100%;
+        height: auto;
+        align: center middle;
+        content-align: center middle;
+        color: #888888;
+        background: transparent;
+    }
+
+    #main-container {
+        height: 1fr;
+        background: #0a0a0a;
+        margin: 0;
+        padding: 0;
+    }
+
+    .panel {
+        border: solid #2a2a2a;
+        border-title-color: #4a4a4a;
+        border-title-align: left;
+        margin: 0;
+        padding: 0;
+        background: #0a0a0a;
+        height: 1fr;
+        &:focus {
+            border: solid #3a3a3a 100%;
+            border-title-color: #666666;
+            border-title-style: b;
+        }
+    }
+
+    .panel-header {
+        display: none;
+    }
+
     #playlists-panel {
         width: 0.8fr;
         min-width: 24;
+        height: 1fr;
+        border-right: solid #2a2a2a;
     }
-    
+
     #songs-panel {
         width: 2.6fr;
         min-width: 60;
         height: 1fr;
+        border-right: solid #2a2a2a;
     }
-    
+
     #tags-panel {
         width: 0.6fr;
         min-width: 22;
+        height: 1fr;
     }
-    
+
     Tree {
-        background: #0a0a0a;
-        color: #e0e0e0;
+        background: #0a0a0a 50%;
+        color: #cccccc;
+        &:focus {
+            outline: vkey #3a3a3a;
+        }
     }
-    
+
     DataTable {
         background: #0a0a0a;
-        color: #e0e0e0;
+        color: #cccccc;
+        height: auto;
+        width: 1fr;
+        padding: 0 1;
+        &:focus {
+            width: 1fr;
+            padding: 0;
+            border-left: inner #3a3a3a;
+        }
     }
-    
+
     DataTable > .datatable--header {
-        background: #2a2a2a;
-        color: #e0e0e0;
+        background: #1a1a1a;
+        color: #777777;
         text-style: bold;
     }
-    
+
     DataTable > .datatable--cursor {
         background: #1a1a1a;
-        color: #00ff00 !important;
+        color: #cccccc;
     }
-    
-    /* Ensure highlighted row text is green in songs table */
+
+    DataTable:blur > .datatable--cursor {
+        background: transparent;
+    }
+
+    /* Cursor row styling - blue/green background with bold text */
     #songs-table > .datatable--cursor {
-        background: #1a1a1a !important;
-        color: #00ff00 !important;
+        background: $success-muted !important;
+        color: $text-success !important;
+        text-style: bold !important;
     }
-    
+
     /* Target all text in cursor row */
     #songs-table .datatable--cursor {
-        color: #00ff00 !important;
+        color: $text-success !important;
+        text-style: bold !important;
     }
-    
-    /* Target cells within cursor row */  
+
+    /* Target cells within cursor row */
     #songs-table .datatable--cursor .datatable--cell {
-        color: #00ff00 !important;
+        color: $text-success !important;
+        text-style: bold !important;
     }
-    
+
     /* Target any text content in cursor */
     #songs-table .datatable--cursor * {
-        color: #00ff00 !important;
+        color: $text-success !important;
+        text-style: bold !important;
     }
-    
+
     /* Tag Schema Panel Specific Styles */
     #tags-panel DataTable {
         background: #0a0a0a;
-        color: #e0e0e0;
+        color: #aaaaaa;
         width: 100%;
         padding: 0;
         margin: 0;
     }
 
     #tags-panel DataTable > .datatable--header {
-        background: #2a2a2a;
-        color: #e0e0e0;
+        background: #1a1a1a;
+        color: #777777;
         text-style: bold;
     }
 
     #tags-panel DataTable > .datatable--cursor {
-        background: #333333;
-        color: #ffffff;
+        background: #2a2a2a;
+        color: #cccccc;
         margin: 0;
         padding: 0;
     }
 
     #tags-panel DataTable > .datatable--cursor:hover {
-        background: #444444;
-        color: #ffffff;
+        background: #3a3a3a;
+        color: #eeeeee;
     }
 
     /* Override built-in zebra stripes with our colors */
     #schema-table > .datatable--row-odd {
-        background: #111111;
+        background: #0f0f0f;
     }
 
     #schema-table > .datatable--row-even {
@@ -769,26 +998,27 @@ class DjroidGUI(App):
     #schema-table > .datatable--row:hover,
     #schema-table > .datatable--row-odd:hover,
     #schema-table > .datatable--row-even:hover {
-        background: #333333 !important;
+        background: #2a2a2a !important;
+        color: #cccccc !important;
     }
 
     /* Make clickable tag rows more obvious - removed cursor since Textual doesn't support it */
 
-    /* Style for selected/active tags in green */
+    /* Style for selected/active tags */
     #schema-table .tag-selected {
-        color: #00ff00 !important;
+        color: #dddddd !important;
         text-style: bold;
     }
 
     /* Style for unselected tags */
     #schema-table .tag-unselected {
-        color: #e0e0e0;
+        color: #aaaaaa;
     }
 
     /* Hover effect for tag values specifically */
     #schema-table > .datatable--row:hover .tag-unselected,
     #schema-table > .datatable--row:hover .tag-selected {
-        background: #555555;
+        background: #3a3a3a;
     }
     
     /* Songs panel layout */
@@ -828,17 +1058,17 @@ class DjroidGUI(App):
         width: 1fr;
         height: 1fr;
         min-width: 18;
-        border-left: solid #333;
+        border-left: solid #2a2a2a;
     }
-    
+
     #sparkline-content {
         width: 100%;
         height: auto;
     }
-    
+
     .sparkline-header {
-        background: #2a2a2a;
-        color: #ffffff;
+        background: #1a1a1a;
+        color: #777777;
         text-align: center;
         height: 1;
         padding: 0;
@@ -847,7 +1077,7 @@ class DjroidGUI(App):
         text-style: bold;
         border: none;
     }
-    
+
     #sparkline-content {
         background: #0a0a0a;
         height: auto;
@@ -906,53 +1136,65 @@ class DjroidGUI(App):
     #pagination-controls {
         height: 3;
         background: #1a1a1a;
-        border-top: solid #333;
+        border-top: solid #2a2a2a;
         padding: 0 1;
+        margin: 0;
         align: center middle;
         content-align: center middle;
     }
 
-    .pagination-btn {
-        width: 1fr;
+    Button {
+        width: auto;
         margin: 0 1;
+        padding: 0 1;
         background: #2a2a2a;
-        color: #e0e0e0;
-        border: solid #444;
-    }
-
-    .pagination-btn:hover {
-        background: #3a3a3a;
-    }
-
-    .pagination-btn:disabled {
-        background: #1a1a1a;
-        color: #555555;
-        border: solid #333;
+        color: #888888;
+        border: none;
+        text-style: bold;
+        &:hover {
+            background: #3a3a3a;
+            color: #aaaaaa;
+        }
+        &:focus {
+            background: #3a3a3a;
+            color: #cccccc;
+        }
+        &:disabled {
+            background: #0f0f0f;
+            color: #444444;
+            opacity: 40%;
+        }
     }
 
     #page-info {
-        width: auto;
+        width: 1fr;
         align: center middle;
         content-align: center middle;
         background: #1a1a1a;
-        color: #00ff00;
+        color: #777777;
         text-style: bold;
-        margin: 0 1;
+        margin: 0;
+        padding: 0;
     }
 
     """
     
     def compose(self) -> ComposeResult:
         with Vertical():
-            # Chat box at top
-            with Container(id="chat-container"):
-                yield ChatBox()
-            
-            # Main 3-column layout below
+            # Title bar at very top
+            yield TitleBar(id="title-bar")
+
+            # Navigation header
+            yield NavigationHeader(id="nav-header")
+
+            # Main 3-column layout
             with Horizontal(id="main-container"):
                 yield PlaylistPanel(classes="panel", id="playlists-panel")
-                yield SongsPanel(classes="panel", id="songs-panel") 
+                yield SongsPanel(classes="panel", id="songs-panel")
                 yield TagSchemaPanel(classes="panel", id="tags-panel")
+
+            # Command palette at bottom
+            yield CommandPalette(id="command-palette")
     
     def on_mount(self) -> None:
         """Called when the app starts."""
