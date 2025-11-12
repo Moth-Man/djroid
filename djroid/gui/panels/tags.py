@@ -115,9 +115,18 @@ class TagSchemaPanel(Static):
         """Load and display all schema data in flat table format with optional highlighting."""
         try:
             self.schema_data = self.tag_schema.load_schema()
+
             table = self.query_one("#schema-table")
             table.clear(columns=True)
-            table.add_column("", width=50)
+
+            # Set the column header text based on warning state
+            if show_no_tags_warning:
+                table.add_column("⚠ No tag data for song", width=50)
+                table.add_class("no-tags-warning")
+            else:
+                table.add_column("", width=50)
+                table.remove_class("no-tags-warning")
+
             table.add_row("", key="blank_start")
 
             if not self.schema_data:
@@ -125,13 +134,6 @@ class TagSchemaPanel(Static):
                 table.update_selected_keys(set())
                 table.update_error_keys(set())
                 return
-
-            error_keys = set()
-            if show_no_tags_warning:
-                warning_text = Text("⚠ No tag data for song")
-                table.add_row(warning_text, key="warning_no_tags")
-                error_keys.add("warning_no_tags")
-                table.add_row("", key="blank_warning")
 
             category_count = len(self.schema_data)
             current_category = 0
@@ -175,7 +177,7 @@ class TagSchemaPanel(Static):
                     table.add_row("", key=f"blank_{category}")
 
             table.update_selected_keys(selected_keys)
-            table.update_error_keys(error_keys)
+            table.update_error_keys(set())
 
         except Exception as e:
             table = self.query_one("#schema-table")
@@ -224,7 +226,7 @@ class TagSchemaPanel(Static):
         if event.data_table.id == "schema-table" and self.current_song:
             row_key = event.row_key.value
 
-            if row_key.startswith("blank_") or row_key.startswith("category_") or row_key.startswith("warning_"):
+            if row_key.startswith("blank_") or row_key.startswith("category_"):
                 return
 
             if row_key.startswith("tag_"):
