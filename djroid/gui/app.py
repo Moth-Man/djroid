@@ -18,12 +18,38 @@ from typing import Tuple, List
 from pathlib import Path
 
 
+# Highlight color aliases
+class HighlightColors:
+    """Color constants for row highlighting."""
+    WARNING_BG = "#3d2817"
+    WARNING_FG = "#ffb454"
+
+    ERROR_BG = "#3d1a1a"
+    ERROR_FG = "#ff6b6b"
+
+    SUCCESS_BG = "#1a3d2a"
+    SUCCESS_FG = "#5ffa7f"
+
+    INFO_BG = "#1a2a3d"
+    INFO_FG = "#5f9ffa"
+
+
 class SongSelected(Message):
     """Message sent when a song is selected"""
-    
+
     def __init__(self, song_data: dict) -> None:
         super().__init__()
         self.song_data = song_data
+
+
+class SongTagsUpdated(Message):
+    """Message sent when a song's tags are updated"""
+
+    def __init__(self, song_id: int, has_tags: bool, new_tags: dict) -> None:
+        super().__init__()
+        self.song_id = song_id
+        self.has_tags = has_tags
+        self.new_tags = new_tags
 
 
 class TitleBar(Static):
@@ -88,11 +114,8 @@ class SongsDataTable(DataTable):
                     if row_index == self.cursor_row:
                         return strip
 
-                bg_color = "#3d2817"
-                text_color = "#ffb454"
-
                 new_segments = [
-                    Segment(seg.text, Style.from_meta(seg.style.meta if seg.style else {}) + Style(bgcolor=bg_color, color=text_color))
+                    Segment(seg.text, Style.from_meta(seg.style.meta if seg.style else {}) + Style(bgcolor=HighlightColors.WARNING_BG, color=HighlightColors.WARNING_FG))
                     for seg in strip
                 ]
                 strip = Strip(new_segments)
@@ -435,28 +458,67 @@ class SongsPanel(Static):
             except Exception:
                 pass
 
+    def update_song_highlighting(self, event: SongTagsUpdated) -> None:
+        """Handle updates to song tags to refresh yellow highlighting."""
+        if not hasattr(self, 'song_data') or not hasattr(self, 'all_songs'):
+            return
+
+        table = self.query_one("#songs-table")
+
+        for song in self.all_songs:
+            if song['id'] == event.song_id:
+                song['tags'] = event.new_tags
+                break
+
+        if hasattr(self, 'original_songs'):
+            for song in self.original_songs:
+                if song['id'] == event.song_id:
+                    song['tags'] = event.new_tags
+                    break
+
+        for i, song in enumerate(self.song_data):
+            if song['id'] == event.song_id:
+                song['tags'] = event.new_tags
+                row_key = str(i)
+
+                if event.has_tags:
+                    self.no_tags_row_keys.discard(row_key)
+                    table.no_tags_row_keys.discard(row_key)
+                else:
+                    self.no_tags_row_keys.add(row_key)
+                    table.no_tags_row_keys.add(row_key)
+
+                table.refresh()
+                break
+
 
 class SchemaDataTable(DataTable):
-    """Custom DataTable for tag schema that highlights selected tags with green."""
+    """Custom DataTable for tag schema that highlights selected tags with green and errors with red."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.selected_tag_row_keys = set()
+        self.error_row_keys = set()
 
     def update_selected_keys(self, keys: set):
         """Update the selected keys and force a full refresh."""
         self.selected_tag_row_keys = keys
         self.refresh(layout=True)
 
+    def update_error_keys(self, keys: set):
+        """Update the error keys and force a full refresh."""
+        self.error_row_keys = keys
+        self.refresh(layout=True)
+
     def render_line(self, y: int):
-        """Render a line, applying green styling to rows with selected tags."""
+        """Render a line, applying green styling to selected tags or red styling to errors."""
         from rich.style import Style
         from rich.segment import Segment
         from textual.strip import Strip
 
         strip = super().render_line(y)
 
-        if not self.selected_tag_row_keys:
+        if not self.selected_tag_row_keys and not self.error_row_keys:
             return strip
 
         try:
@@ -472,7 +534,13 @@ class SchemaDataTable(DataTable):
 
             row_key_str = str(row_key.value)
 
-            if row_key_str in self.selected_tag_row_keys:
+            bg_color = None
+            text_color = None
+
+            if row_key_str in self.error_row_keys:
+                bg_color = HighlightColors.ERROR_BG
+                text_color = HighlightColors.ERROR_FG
+            elif row_key_str in self.selected_tag_row_keys:
                 if self.cursor_row is not None:
                     try:
                         row_keys_list = list(self.rows.keys())
@@ -482,10 +550,10 @@ class SchemaDataTable(DataTable):
                                 return strip
                     except (ValueError, IndexError):
                         pass
+                bg_color = HighlightColors.SUCCESS_BG
+                text_color = HighlightColors.SUCCESS_FG
 
-                bg_color = "#1a3d2a"
-                text_color = "#5ffa7f"
-
+            if bg_color and text_color:
                 new_segments = [
                     Segment(seg.text, Style.from_meta(seg.style.meta if seg.style else {}) + Style(bgcolor=bg_color, color=text_color))
                     for seg in strip
@@ -521,7 +589,7 @@ class TagSchemaPanel(Static):
         self.border_title = "Tag Schema"
         self.load_schema_data()
                 
-    def load_schema_data(self, highlighted_tags=None):
+    def load_schema_data(self, highlighted_tags=None, show_no_tags_warning=False):
         """Load and display all schema data in flat table format with optional highlighting."""
         try:
             self.schema_data = self.tag_schema.load_schema()
@@ -533,7 +601,15 @@ class TagSchemaPanel(Static):
             if not self.schema_data:
                 table.add_row("No tag schema found")
                 table.update_selected_keys(set())
+                table.update_error_keys(set())
                 return
+
+            error_keys = set()
+            if show_no_tags_warning:
+                warning_text = Text("⚠ No tag data for song")
+                table.add_row(warning_text, key="warning_no_tags")
+                error_keys.add("warning_no_tags")
+                table.add_row("", key="blank_warning")
 
             category_count = len(self.schema_data)
             current_category = 0
@@ -577,6 +653,7 @@ class TagSchemaPanel(Static):
                     table.add_row("", key=f"blank_{category}")
 
             table.update_selected_keys(selected_keys)
+            table.update_error_keys(error_keys)
 
         except Exception as e:
             table = self.query_one("#schema-table")
@@ -585,104 +662,117 @@ class TagSchemaPanel(Static):
             table.add_row("")
             table.add_row(f"Error loading schema: {str(e)}")
             table.update_selected_keys(set())
+            table.update_error_keys(set())
     
+    def _check_song_has_tags(self, song_data: dict) -> bool:
+        """Check if a song has any tags from the tag schema."""
+        if not song_data:
+            return False
+
+        tags = song_data.get('tags')
+
+        if not tags or not isinstance(tags, dict) or len(tags) == 0:
+            return False
+
+        for category, value in tags.items():
+            if value is not None:
+                if isinstance(value, (list, str)) and len(value) > 0:
+                    return True
+                elif isinstance(value, dict) and value.get("type") == "rating":
+                    return True
+                elif isinstance(value, (int, float)) and value > 0:
+                    return True
+
+        return False
+
     def highlight_song_tags(self, song_data):
         """Highlight tags in the schema that match the selected song."""
         self.current_song = song_data
-        if song_data and song_data.get('tags'):
-            self.load_schema_data(song_data['tags'])
+        if song_data:
+            has_tags = self._check_song_has_tags(song_data)
+            if has_tags:
+                self.load_schema_data(song_data.get('tags'), show_no_tags_warning=False)
+            else:
+                self.load_schema_data(None, show_no_tags_warning=True)
         else:
             self.load_schema_data()
 
     def on_data_table_row_selected(self, event) -> None:
         """Handle tag selection in the schema table."""
         if event.data_table.id == "schema-table" and self.current_song:
-            try:
-                row_key = event.row_key.value
+            row_key = event.row_key.value
 
-                if row_key.startswith("blank_") or row_key.startswith("category_"):
-                    return
+            if row_key.startswith("blank_") or row_key.startswith("category_") or row_key.startswith("warning_"):
+                return
 
-                if row_key.startswith("tag_"):
-                    parts = row_key.split("_", 2)
-                    if len(parts) >= 3:
-                        category = parts[1]
-                        value = parts[2]
-                        self.toggle_tag(category, value)
+            if row_key.startswith("tag_"):
+                parts = row_key.split("_", 2)
+                if len(parts) >= 3:
+                    category = parts[1]
+                    value = parts[2]
+                    self.toggle_tag(category, value)
 
-                elif row_key.startswith("rating_"):
-                    parts = row_key.split("_", 2)
-                    if len(parts) >= 3:
-                        category = parts[1]
-                        rating = parts[2]
-                        self.set_rating(category, rating)
-
-            except Exception:
-                pass
+            elif row_key.startswith("rating_"):
+                parts = row_key.split("_", 2)
+                if len(parts) >= 3:
+                    category = parts[1]
+                    rating = parts[2]
+                    self.set_rating(category, rating)
 
     def toggle_tag(self, category: str, value: str):
         """Toggle a tag value for the current song."""
         if not self.current_song:
             return
 
-        try:
-            file_path = Path(self.current_song['filepath'])
-            current_tags = self.current_song.get('tags', {})
+        file_path = Path(self.current_song['filepath'])
+        current_tags = self.current_song.get('tags') or {}
 
-            is_currently_set = False
-            if category in current_tags:
-                song_values = current_tags[category]
-                if isinstance(song_values, list) and value in song_values:
-                    is_currently_set = True
+        is_currently_set = False
+        if category in current_tags:
+            song_values = current_tags[category]
+            if isinstance(song_values, list) and value in song_values:
+                is_currently_set = True
 
-            if is_currently_set:
-                success = self.tag_service.remove_tag_from_file(file_path, category, value)
-            else:
-                success = self.tag_service.add_tag_to_file(file_path, category, value)
+        if is_currently_set:
+            success = self.tag_service.remove_tag_from_file(file_path, category, value)
+        else:
+            success = self.tag_service.add_tag_to_file(file_path, category, value)
 
-            if success:
-                self.update_song_tags_in_database()
-
-        except Exception:
-            pass
+        if success:
+            self.update_song_tags_in_database()
 
     def set_rating(self, category: str, rating: str):
         """Set a rating value for the current song."""
         if not self.current_song:
             return
 
-        try:
-            file_path = Path(self.current_song['filepath'])
-            success = self.tag_service.set_rating_value(file_path, category, rating)
+        file_path = Path(self.current_song['filepath'])
+        success = self.tag_service.set_rating_value(file_path, category, rating)
 
-            if success:
-                self.update_song_tags_in_database()
-
-        except Exception:
-            pass
+        if success:
+            self.update_song_tags_in_database()
 
     def update_song_tags_in_database(self):
         """Update the song's tags in the database after file modification."""
         if not self.current_song:
             return
 
+        file_path = Path(self.current_song['filepath'])
+        new_tags = self.tag_service.build_tags_json_from_file(file_path)
+
+        db = SessionLocal()
         try:
-            file_path = Path(self.current_song['filepath'])
-            new_tags = self.tag_service.build_tags_json_from_file(file_path)
+            song = db.query(Song).filter(Song.id == self.current_song['id']).first()
+            if song:
+                song.tags = new_tags
+                db.commit()
+                self.current_song['tags'] = new_tags
+                self.highlight_song_tags(self.current_song)
 
-            db = SessionLocal()
-            try:
-                song = db.query(Song).filter(Song.id == self.current_song['id']).first()
-                if song:
-                    song.tags = new_tags
-                    db.commit()
-                    self.current_song['tags'] = new_tags
-                    self.highlight_song_tags(self.current_song)
-            finally:
-                db.close()
-
-        except Exception:
-            pass
+                has_tags = self._check_song_has_tags(self.current_song)
+                self.post_message(SongTagsUpdated(self.current_song['id'], has_tags, new_tags))
+        finally:
+            db.close()
 
 
 class DjroidGUI(App):
@@ -1106,6 +1196,14 @@ class DjroidGUI(App):
         try:
             tag_panel = self.query_one("#tags-panel")
             tag_panel.highlight_song_tags(event.song_data)
+        except Exception:
+            pass
+
+    def on_song_tags_updated(self, event: SongTagsUpdated) -> None:
+        """Handle song tags update - refresh yellow highlighting in songs panel."""
+        try:
+            songs_panel = self.query_one("#songs-panel")
+            songs_panel.update_song_highlighting(event)
         except Exception:
             pass
 
