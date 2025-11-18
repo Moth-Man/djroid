@@ -14,3 +14,7 @@ class HighlightColors:
 
     INFO_BG = "#1a2a3d"
     INFO_FG = "#5f9ffa"
+
+    # Cursor/selection highlighting (blue background with light blue text)
+    CURSOR_BG = "#0178d4"
+    CURSOR_FG = "#5f9ffa"

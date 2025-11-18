@@ -10,7 +10,15 @@ from rich import box
 import click
 
 class TagSchema:
+    """
+    Service for managing the tag schema configuration.
+
+    Handles creation, modification, and persistence of the tag schema which
+    defines available categories and values for tagging music files.
+    """
+
     def __init__(self):
+        """Initialize TagSchema manager with console output and schema file path."""
         self.console = Console()
         self.schema_file = Path.home() / '.djroid' / 'tag_schema.json'
         self.schema: Dict[str, List[str]] = {}
@@ -256,29 +264,6 @@ class TagSchema:
         self.console.print(f"[green]Added rating category '{category_name}' with max rating {max_rating}[/green]")
         
         return schema
-
-    def get_display_content(self) -> str:
-        """Get formatted content for GUI display"""
-        schema = self.load_schema()
-        
-        if not schema:
-            return "No tag schema found. Run 'djroid tag-schema' to create one."
-        
-        content_lines = []
-        for category, values in schema.items():
-            if isinstance(values, list):
-                content_lines.append(f"{category.upper()}")
-                for value in values[:10]:  # Show first 10 values
-                    content_lines.append(f"• {value}")
-                if len(values) > 10:
-                    content_lines.append(f"• ... ({len(values) - 10} more)")
-                content_lines.append("")  # Empty line between categories
-            elif isinstance(values, dict) and values.get("type") == "rating":
-                max_rating = values.get("max_rating", 5)
-                content_lines.append(f"{category.upper()} (Rating 1-{max_rating})")
-                content_lines.append("")
-        
-        return "\n".join(content_lines)
 
     def setup_schema(self):
         """Main method to setup the tag schema interactively"""

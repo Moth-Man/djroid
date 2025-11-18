@@ -18,7 +18,16 @@ import os
 logger = get_logger(__name__)
 
 class Tag:
+    """
+    Service for managing file tags and metadata.
+
+    Provides functionality for interactive and programmatic tagging of music files,
+    including category-based tags, rating systems, metadata editing, and
+    Rekordbox comment management.
+    """
+
     def __init__(self):
+        """Initialize Tag service with console output, schema loading, and file tracking."""
         self.console = Console()
         self.schema_file = Path.home() / '.djroid' / 'tag_schema.json'
         self.schema: Dict[str, List[str]] = self.load_schema()

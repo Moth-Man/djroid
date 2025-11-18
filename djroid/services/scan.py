@@ -2,7 +2,7 @@ import json
 import sys
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.table import Table
@@ -17,11 +17,20 @@ from djroid.logging import get_logger
 from djroid.db import init_db, get_db
 from djroid.db.dao.song_dao import SongDAO
 from djroid.services.tag import Tag
+from djroid.utility.audio_analysis import analyze_audio_quality
 
 logger = get_logger(__name__)
 
 class Scan:
+    """
+    Service for scanning and analyzing music files into the database.
+
+    Handles comprehensive metadata extraction, audio quality analysis,
+    waveform generation, and tag processing for music files.
+    """
+
     def __init__(self):
+        """Initialize Scan service with console output, tag service integration, and waveform parameters."""
         self.console = Console()
         self.tag_service = Tag()
         self.waveform_points = 80  # Number of points in waveform preview
@@ -141,89 +150,6 @@ class Scan:
         # Use the shared function from the tag service
         return self.tag_service.build_tags_json_from_file(file_path)
     
-    def analyze_audio_quality(self, file_path: Path) -> float:
-        """
-        Analyze audio file and return quality score between 0.0 and 1.0
-        
-        Quality factors:
-        - Bitrate (higher is better)
-        - Sample rate (44.1kHz+ preferred) 
-        - File format (lossless > high bitrate lossy)
-        """
-        try:
-            # Get audio metadata using ffprobe
-            metadata = self._get_audio_metadata(file_path)
-            if not metadata:
-                return 0.3  # Default low score for unreadable files
-            
-            # Extract key metrics
-            bitrate = metadata.get('bit_rate', 0)
-            sample_rate = metadata.get('sample_rate', 0)
-            codec_name = metadata.get('codec_name', '').lower()
-            
-            # Convert to numeric values
-            try:
-                bitrate = int(bitrate) if bitrate else 0
-                sample_rate = int(sample_rate) if sample_rate else 0
-            except (ValueError, TypeError):
-                bitrate = 0
-                sample_rate = 0
-            
-            # Calculate quality score
-            quality_score = 0.0
-            
-            # Bitrate scoring (40% of total score)
-            if codec_name in ['flac', 'alac', 'pcm_s16le', 'pcm_s24le']:
-                # Lossless formats get high bitrate score
-                quality_score += 0.4
-            elif bitrate >= 320000:  # 320kbps+
-                quality_score += 0.4
-            elif bitrate >= 256000:  # 256kbps
-                quality_score += 0.32
-            elif bitrate >= 192000:  # 192kbps
-                quality_score += 0.24
-            elif bitrate >= 128000:  # 128kbps
-                quality_score += 0.16
-            else:
-                quality_score += 0.08
-            
-            # Sample rate scoring (30% of total score)
-            if sample_rate >= 96000:  # High-res audio
-                quality_score += 0.3
-            elif sample_rate >= 48000:  # Professional standard
-                quality_score += 0.28
-            elif sample_rate >= 44100:  # CD quality
-                quality_score += 0.25
-            elif sample_rate >= 22050:  # Acceptable
-                quality_score += 0.15
-            else:
-                quality_score += 0.05
-            
-            # File format bonus (30% of total score)
-            if codec_name in ['flac', 'alac']:  # Lossless
-                quality_score += 0.3
-            elif codec_name in ['pcm_s16le', 'pcm_s24le']:  # Uncompressed
-                quality_score += 0.28
-            elif codec_name == 'mp3' and bitrate >= 320000:  # High quality MP3
-                quality_score += 0.22
-            elif codec_name == 'mp3' and bitrate >= 256000:  # Good MP3
-                quality_score += 0.18
-            elif codec_name == 'aac' and bitrate >= 256000:  # High quality AAC
-                quality_score += 0.2
-            else:
-                quality_score += 0.1
-            
-            # Ensure score is between 0.0 and 1.0
-            quality_score = max(0.0, min(1.0, quality_score))
-            
-            logger.debug(f"Quality analysis for {file_path.name}: bitrate={bitrate}, sample_rate={sample_rate}, codec={codec_name}, score={quality_score:.3f}")
-            
-            return quality_score
-            
-        except Exception as e:
-            logger.warning(f"Failed to analyze audio quality for {file_path}: {e}")
-            return 0.3  # Default score for analysis failures
-    
     def generate_waveform_preview(self, file_path: Path) -> Optional[List[float]]:
         """
         Generate downsampled waveform preview with normalized amplitude values
@@ -278,53 +204,6 @@ class Scan:
         except Exception as e:
             logger.warning(f"Failed to generate waveform for {file_path}: {e}")
             return None
-    
-    def _get_audio_metadata(self, file_path: Path) -> Optional[dict]:
-        """Get audio metadata using ffprobe"""
-        try:
-            cmd = [
-                'ffprobe',
-                '-v', 'quiet',
-                '-print_format', 'json',
-                '-show_streams',
-                str(file_path)
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            
-            if result.returncode != 0:
-                logger.warning(f"ffprobe failed for {file_path}: {result.stderr}")
-                return None
-            
-            data = json.loads(result.stdout)
-            
-            # Find the first audio stream
-            for stream in data.get('streams', []):
-                if stream.get('codec_type') == 'audio':
-                    return stream
-            
-            return None
-            
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, json.JSONDecodeError) as e:
-            logger.warning(f"Failed to get metadata for {file_path}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error getting metadata for {file_path}: {e}")
-            return None
-    
-    def get_color_gradient(self, quality_score: float) -> Tuple[str, str]:
-        """
-        Get color gradient based on quality score
-        
-        Returns tuple of (primary_color, secondary_color) for gradient
-        """
-        if quality_score >= 0.85:
-            return ("green", "yellow")  # High quality: green with yellow highlights
-        elif quality_score >= 0.6:
-            return ("yellow", "red")    # Medium quality: yellow with red warnings
-        else:
-            return ("red", "bright_red")    # Low quality: red with bright red emphasis
-    
     def scan_single_file(self, file_path: Path, db_session) -> bool:
         """Scan a single music file and add/update it in the database"""
         try:
@@ -337,7 +216,7 @@ class Scan:
             tags_json = self.tag_service.build_tags_json_from_file(file_path)
             
             # Perform audio analysis
-            quality_score = self.analyze_audio_quality(file_path)
+            quality_score = analyze_audio_quality(file_path)
             waveform_preview = self.generate_waveform_preview(file_path)
             
             # Create or update the song in the database

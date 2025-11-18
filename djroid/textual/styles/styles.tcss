@@ -119,7 +119,7 @@ Screen {
     border-right: solid #2a2a2a;
 }
 
-#songs-panel {
+#collection-panel {
     width: 2.6fr;
     min-width: 60;
     height: 1fr;
@@ -168,23 +168,23 @@ DataTable:blur > .datatable--cursor {
     background: transparent;
 }
 
-#songs-table > .datatable--cursor {
+#collection-table > .datatable--cursor {
     background: $success-muted !important;
     color: $text-success !important;
     text-style: bold !important;
 }
 
-#songs-table .datatable--cursor {
+#collection-table .datatable--cursor {
     color: $text-success !important;
     text-style: bold !important;
 }
 
-#songs-table .datatable--cursor .datatable--cell {
+#collection-table .datatable--cursor .datatable--cell {
     color: $text-success !important;
     text-style: bold !important;
 }
 
-#songs-table .datatable--cursor * {
+#collection-table .datatable--cursor * {
     color: $text-success !important;
     text-style: bold !important;
 }
@@ -255,7 +255,7 @@ DataTable:blur > .datatable--cursor {
     width: 4fr;
 }
 
-#songs-table {
+#collection-table {
     height: 1fr;
     width: 100%;
     scrollbar-size: 0 0;
@@ -272,7 +272,7 @@ DataTable > .datatable--row {
     height: 1fr;
 }
 
-#songs-table {
+#collection-table {
     width: 4fr;
     height: 1fr;
     min-width: 70;
@@ -319,36 +319,56 @@ DataTable > .datatable--row {
     border: none;
 }
 
+/* ==============================================================================
+   WAVEFORM PREVIEW GRADIENTS
+
+   Color gradients for waveform sparkline visualizations in the collection panel.
+   Each gradient pattern provides visual variety by cycling through different
+   color combinations. Patterns are applied using get_waveform_gradient_class()
+   from textual/components/waveform_preview.py
+   ============================================================================== */
+
+/* Gradient 1: Red (error) monochrome */
 .gradient-1 > .sparkline--max-color { color: $error; }
 .gradient-1 > .sparkline--min-color { color: $error 30%; }
 
+/* Gradient 2: Red to yellow */
 .gradient-2 > .sparkline--max-color { color: $error; }
 .gradient-2 > .sparkline--min-color { color: $warning; }
 
+/* Gradient 3: Yellow to red */
 .gradient-3 > .sparkline--max-color { color: $warning; }
 .gradient-3 > .sparkline--min-color { color: $error; }
 
+/* Gradient 4: Yellow (warning) monochrome */
 .gradient-4 > .sparkline--max-color { color: $warning; }
 .gradient-4 > .sparkline--min-color { color: $warning 30%; }
 
+/* Gradient 5: Yellow to green */
 .gradient-5 > .sparkline--max-color { color: $warning; }
 .gradient-5 > .sparkline--min-color { color: $success; }
 
+/* Gradient 6: Green to yellow */
 .gradient-6 > .sparkline--max-color { color: $success; }
 .gradient-6 > .sparkline--min-color { color: $warning; }
 
+/* Gradient 7: Green monochrome (light) */
 .gradient-7 > .sparkline--max-color { color: $success; }
 .gradient-7 > .sparkline--min-color { color: $success 30%; }
 
+/* Gradient 8: Green monochrome (dark) */
 .gradient-8 > .sparkline--max-color { color: $success; }
 .gradient-8 > .sparkline--min-color { color: $success 60%; }
 
+/* Gradient 9: Accent to primary */
 .gradient-9 > .sparkline--max-color { color: $accent; }
 .gradient-9 > .sparkline--min-color { color: $primary; }
 
+/* Gradient 10: Primary to accent */
 .gradient-10 > .sparkline--max-color { color: $primary; }
 .gradient-10 > .sparkline--min-color { color: $accent; }
 
+/* Default waveform styling (fallback) */
 .waveform-sparkline > .sparkline--max-color { color: $success; }
 .waveform-sparkline > .sparkline--min-color { color: $warning; }
 

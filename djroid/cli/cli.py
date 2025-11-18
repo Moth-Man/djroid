@@ -8,7 +8,7 @@ from djroid.services.tag_schema import TagSchema
 from djroid.services.tag import Tag
 from djroid.services.scan import Scan
 from djroid.services.tag_interactive import TagInteractive
-from djroid.gui.app import run_gui
+from djroid.textual.app import run_gui
 
 # Initialize logger for this module
 logger = get_logger(__name__)

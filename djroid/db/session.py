@@ -16,6 +16,16 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
+    """
+    Database session generator for dependency injection.
+
+    Yields a SQLAlchemy database session that is automatically closed when
+    the context exits. Use this function with FastAPI dependencies or in
+    'with' statements to ensure proper session cleanup.
+
+    Yields:
+        Session: SQLAlchemy database session
+    """
     logger.debug("Creating new database session")
     db = SessionLocal()
     try:
@@ -25,7 +35,15 @@ def get_db():
         db.close()
 
 def check_database_connection():
-    """Check if the database is accessible"""
+    """
+    Verify database accessibility by executing a test query.
+
+    Attempts to connect to the database and execute a simple SELECT statement
+    to validate that the database is reachable and responsive.
+
+    Returns:
+        bool: True if connection successful, False otherwise
+    """
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
@@ -36,7 +54,21 @@ def check_database_connection():
         return False
 
 def create_database_if_not_exists():
-    """Create the database if it doesn't exist"""
+    """
+    Create PostgreSQL database if it does not already exist.
+
+    Parses the DATABASE_URL to extract connection details, connects to the
+    PostgreSQL server (trying multiple system databases: target, postgres, template1),
+    and creates the target database if it's not found.
+
+    The function handles the following scenarios:
+    - Database already exists: Returns successfully without changes
+    - Database doesn't exist: Creates it with default encoding
+    - Connection failures: Tries alternative system databases
+
+    Returns:
+        bool: True if database exists or was created successfully, False on error
+    """
     try:
         # Parse the database URL to extract connection details
         parsed_url = urlparse(DATABASE_URL)
@@ -100,7 +132,19 @@ def create_database_if_not_exists():
         return False
 
 def init_database():
-    """Initialize the database and create all tables"""
+    """
+    Initialize the database and create all required tables.
+
+    This is the main setup function that:
+    1. Creates the database if it doesn't exist
+    2. Verifies database connectivity
+    3. Creates all tables defined in SQLAlchemy models
+
+    Should be called once during application setup or when resetting the database.
+
+    Returns:
+        bool: True if initialization successful, False on error
+    """
     try:
         # Create database if it doesn't exist
         if not create_database_if_not_exists():
@@ -119,7 +163,19 @@ def init_database():
         return False
 
 def drop_database():
-    """Drop all tables (use with caution)"""
+    """
+    Drop all database tables - DESTRUCTIVE OPERATION.
+
+    WARNING: This permanently deletes all tables and data. Use only for:
+    - Development and testing
+    - Database schema resets
+    - Clean reinstallation
+
+    Does NOT drop the database itself, only the tables within it.
+
+    Returns:
+        bool: True if tables dropped successfully, False on error
+    """
     try:
         Base.metadata.drop_all(bind=engine)
         logger.info("Database tables dropped successfully")

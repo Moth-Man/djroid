@@ -1,22 +1,22 @@
-"""Songs panel widget for the djroid GUI."""
+"""Collection panel widget for the djroid textual GUI."""
 
 from math import sin
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.widgets import Static, DataTable, Button, Sparkline
-from textual import events
 from rich.segment import Segment
 from rich.style import Style
 from textual.strip import Strip
 
-from ..colors import HighlightColors
+from ..styles.colors import HighlightColors
 from ..messages import SongSelected, SongTagsUpdated
+from ..components.waveform_preview import get_waveform_gradient_class
 from ...db.session import SessionLocal
 from ...db.models.song import Song
 
 
-class SongsDataTable(DataTable):
-    """Custom DataTable for songs that highlights rows with no tags."""
+class CollectionDataTable(DataTable):
+    """Custom DataTable for the collection that highlights rows with no tags."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -40,11 +40,13 @@ class SongsDataTable(DataTable):
             row_key_str = str(row_key.value)
 
             if row_key_str in self.no_tags_row_keys:
+                # Check if this is the cursor row - if so, don't apply warning styling
                 if self.cursor_row is not None:
                     row_index = list(self.rows.keys()).index(row_key) if row_key in self.rows else -1
                     if row_index == self.cursor_row:
-                        return strip
+                        return strip  # Let CSS handle cursor styling
 
+                # Apply warning highlighting for rows with no tags
                 new_segments = [
                     Segment(seg.text, Style.from_meta(seg.style.meta if seg.style else {}) + Style(bgcolor=HighlightColors.WARNING_BG, color=HighlightColors.WARNING_FG))
                     for seg in strip
@@ -56,8 +58,8 @@ class SongsDataTable(DataTable):
         return strip
 
 
-class SongsPanel(Static):
-    """Middle panel showing songs list."""
+class CollectionPanel(Static):
+    """Middle panel showing the collection of songs."""
 
     def on_mount(self) -> None:
         """Set the border title when mounted."""
@@ -88,7 +90,7 @@ class SongsPanel(Static):
             yield Static("SONGS", classes="panel-header")
             with Horizontal(id="songs-content"):
                 with Vertical(id="table-container"):
-                    table = SongsDataTable(id="songs-table")
+                    table = CollectionDataTable(id="collection-table")
                     table.cursor_type = "row"
                     table.zebra_stripes = True
                     yield table
@@ -142,7 +144,7 @@ class SongsPanel(Static):
             self.display_page()
 
         except Exception as e:
-            table = self.query_one("#songs-table")
+            table = self.query_one("#collection-table")
             table.clear(columns=True)
             table.add_column("Error")
             table.add_row(f"Error loading songs: {str(e)}")
@@ -174,11 +176,12 @@ class SongsPanel(Static):
         end_idx = start_idx + self.songs_per_page
         page_songs = self.all_songs[start_idx:end_idx]
 
-        table = self.query_one("#songs-table")
+        table = self.query_one("#collection-table")
         table.clear(columns=True)
         table.no_tags_row_keys.clear()
 
-        table.add_column("Title", width=30)
+        # Use flexible width for Title to fill available space
+        table.add_column("Title")
         table.add_column("Artist", width=25)
         table.add_column("Genre", width=18)
         table.add_column("BPM", width=8)
@@ -215,11 +218,7 @@ class SongsPanel(Static):
             waveform_data = song['waveform_preview'] or [abs(sin(x / 3.14)) for x in range(0, 360, 25)][:15]
 
             song_index = len(self.song_data)
-            gradient_patterns = [
-                "gradient-1", "gradient-2", "gradient-3", "gradient-4", "gradient-5",
-                "gradient-6", "gradient-7", "gradient-8", "gradient-9", "gradient-10"
-            ]
-            pattern_class = gradient_patterns[song_index % len(gradient_patterns)]
+            pattern_class = get_waveform_gradient_class(song_index)
 
             sparkline = Sparkline(waveform_data, summary_function=max, classes=f"waveform-sparkline {pattern_class}")
             sparkline_content.mount(sparkline)
@@ -245,6 +244,19 @@ class SongsPanel(Static):
 
         table.refresh()
         self.update_page_info()
+
+        # Post SongSelected event for the first song when page loads
+        if self.song_data and len(self.song_data) > 0:
+            # Use call_after_refresh to ensure table is fully rendered
+            self.call_after_refresh(self._post_first_song_selected)
+            # Focus the table so arrow keys work immediately
+            self.call_after_refresh(lambda: table.focus())
+
+    def _post_first_song_selected(self):
+        """Post SongSelected event for the first song in the current page."""
+        if self.song_data and len(self.song_data) > 0:
+            first_song = self.song_data[0]
+            self.post_message(SongSelected(first_song))
 
     def update_page_info(self):
         """Update the page info display and enable/disable buttons."""
@@ -283,23 +295,28 @@ class SongsPanel(Static):
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle song row selection (click)."""
-        if event.data_table.id == "songs-table" and hasattr(self, 'song_data'):
+        if event.data_table.id == "collection-table" and hasattr(self, 'song_data'):
             try:
                 row_index = int(event.row_key.value)
                 selected_song = self.song_data[row_index]
                 self.post_message(SongSelected(selected_song))
+                # Force table refresh to update cursor highlighting immediately
+                event.data_table.refresh()
             except (IndexError, ValueError, AttributeError):
                 pass
 
-    def on_data_table_cursor_changed(self, event: events.CursorPosition) -> None:
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         """Handle cursor movement in the table (arrow keys)."""
-        if event.data_table.id == "songs-table" and hasattr(self, 'song_data'):
+        if event.data_table.id == "collection-table" and hasattr(self, 'song_data'):
             try:
-                row_index = event.cursor_row
-                if 0 <= row_index < len(self.song_data):
+                # Get the row index from the cursor_row attribute of the table
+                table = event.data_table
+                row_index = table.cursor_row
+                if row_index is not None and 0 <= row_index < len(self.song_data):
                     selected_song = self.song_data[row_index]
                     self.post_message(SongSelected(selected_song))
-                self.sync_sparklines_with_table()
+                # Force table refresh to update cursor highlighting immediately
+                table.refresh()
             except (IndexError, ValueError, AttributeError):
                 pass
 
@@ -354,24 +371,12 @@ class SongsPanel(Static):
         except Exception:
             pass
 
-    def on_key(self, event) -> None:
-        """Handle key events to catch arrow navigation."""
-        if event.key in ["up", "down"] and hasattr(self, 'song_data'):
-            try:
-                table = self.query_one("#songs-table")
-                cursor_row = table.cursor_row
-                if 0 <= cursor_row < len(self.song_data):
-                    selected_song = self.song_data[cursor_row]
-                    self.post_message(SongSelected(selected_song))
-            except Exception:
-                pass
-
     def update_song_highlighting(self, event: SongTagsUpdated) -> None:
         """Handle updates to song tags to refresh yellow highlighting."""
         if not hasattr(self, 'song_data') or not hasattr(self, 'all_songs'):
             return
 
-        table = self.query_one("#songs-table")
+        table = self.query_one("#collection-table")
 
         for song in self.all_songs:
             if song['id'] == event.song_id:

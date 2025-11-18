@@ -10,7 +10,7 @@ from rich.segment import Segment
 from rich.style import Style
 from textual.strip import Strip
 
-from ..colors import HighlightColors
+from ..styles.colors import HighlightColors
 from ..messages import SongTagsUpdated
 from ...services.tag_schema import TagSchema
 from ...services.tag import Tag

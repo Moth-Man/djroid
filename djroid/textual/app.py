@@ -5,18 +5,18 @@ from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal
 
 from .messages import SongSelected, SongTagsUpdated
-from .panels.title_bar import TitleBar
+from .components.title_bar import TitleBar
 from .panels.navigation import NavigationHeader
 from .panels.command_palette import CommandPalette
 from .panels.playlists import PlaylistPanel
-from .panels.songs import SongsPanel
-from .panels.tags import TagSchemaPanel
+from .panels.collection_panel import CollectionPanel
+from .panels.tag_schema_panel import TagSchemaPanel
 
 
 class DjroidGUI(App):
     """Main Djroid GUI application."""
 
-    CSS_PATH = Path(__file__).parent / "styles.tcss"
+    CSS_PATH = Path(__file__).parent / "styles" / "styles.tcss"
 
     def compose(self) -> ComposeResult:
         with Vertical():
@@ -24,7 +24,7 @@ class DjroidGUI(App):
             yield NavigationHeader(id="nav-header")
             with Horizontal(id="main-container"):
                 yield PlaylistPanel(classes="panel", id="playlists-panel")
-                yield SongsPanel(classes="panel", id="songs-panel")
+                yield CollectionPanel(classes="panel", id="collection-panel")
                 yield TagSchemaPanel(classes="panel", id="tags-panel")
             yield CommandPalette(id="command-palette")
 
@@ -42,10 +42,10 @@ class DjroidGUI(App):
             pass
 
     def on_song_tags_updated(self, event: SongTagsUpdated) -> None:
-        """Handle song tags update - refresh yellow highlighting in songs panel."""
+        """Handle song tags update - refresh yellow highlighting in collection panel."""
         try:
-            songs_panel = self.query_one("#songs-panel")
-            songs_panel.update_song_highlighting(event)
+            collection_panel = self.query_one("#collection-panel")
+            collection_panel.update_song_highlighting(event)
         except Exception:
             pass
 
