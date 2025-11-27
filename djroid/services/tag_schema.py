@@ -10,7 +10,15 @@ from rich import box
 import click
 
 class TagSchema:
+    """
+    Service for managing the tag schema configuration.
+
+    Handles creation, modification, and persistence of the tag schema which
+    defines available categories and values for tagging music files.
+    """
+
     def __init__(self):
+        """Initialize TagSchema manager with console output and schema file path."""
         self.console = Console()
         self.schema_file = Path.home() / '.djroid' / 'tag_schema.json'
         self.schema: Dict[str, List[str]] = {}

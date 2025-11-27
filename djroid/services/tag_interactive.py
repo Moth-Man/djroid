@@ -173,9 +173,15 @@ class FileSelectorApp(App):
             self.exit()
 
 class TagInteractive:
-    """Enhanced interactive tagging interface"""
-    
+    """
+    Enhanced interactive tagging interface using Textual TUI.
+
+    Provides a file selector app and rich interactive tagging experience
+    with schema-based tag management, metadata editing, and visual feedback.
+    """
+
     def __init__(self):
+        """Initialize TagInteractive with console output and schema loading."""
         self.console = Console()
         self.schema_file = Path.home() / '.djroid' / 'tag_schema.json'
         self.schema: Dict[str, List[str]] = self.load_schema()

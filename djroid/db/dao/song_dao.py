@@ -39,7 +39,9 @@ class SongDAO(BaseDAO[Song]):
                    date_time_original: Optional[str] = None,
                    file_type: Optional[str] = None,
                    file_size_mb: Optional[float] = None,
-                   tags: Optional[Dict[str, Any]] = None) -> Song:
+                   tags: Optional[Dict[str, Any]] = None,
+                   quality_score: Optional[float] = None,
+                   waveform_preview: Optional[List[float]] = None) -> Song:
         """Create a new song record"""
         song = Song(
             filepath=filepath,
@@ -63,7 +65,9 @@ class SongDAO(BaseDAO[Song]):
             date_time_original=date_time_original,
             file_type=file_type,
             file_size_mb=file_size_mb,
-            tags=tags
+            tags=tags,
+            quality_score=quality_score,
+            waveform_preview=waveform_preview
         )
         self.db.add(song)
         self.db.commit()
@@ -96,7 +100,9 @@ class SongDAO(BaseDAO[Song]):
                    date_time_original: Optional[str] = None,
                    file_type: Optional[str] = None,
                    file_size_mb: Optional[float] = None,
-                   tags: Optional[Dict[str, Any]] = None) -> Optional[Song]:
+                   tags: Optional[Dict[str, Any]] = None,
+                   quality_score: Optional[float] = None,
+                   waveform_preview: Optional[List[float]] = None) -> Optional[Song]:
         """Update an existing song record"""
         song = self.get_by_filepath(filepath)
         if not song:
@@ -145,6 +151,10 @@ class SongDAO(BaseDAO[Song]):
             song.file_size_mb = file_size_mb
         if tags is not None:
             song.tags = tags
+        if quality_score is not None:
+            song.quality_score = quality_score
+        if waveform_preview is not None:
+            song.waveform_preview = waveform_preview
         
         self.db.add(song)
         self.db.commit()
@@ -173,7 +183,9 @@ class SongDAO(BaseDAO[Song]):
                             date_time_original: Optional[str] = None,
                             file_type: Optional[str] = None,
                             file_size_mb: Optional[float] = None,
-                            tags: Optional[Dict[str, Any]] = None) -> Song:
+                            tags: Optional[Dict[str, Any]] = None,
+                            quality_score: Optional[float] = None,
+                            waveform_preview: Optional[List[float]] = None) -> Song:
         """Create a new song or update existing one"""
         existing_song = self.get_by_filepath(filepath)
         if existing_song:
@@ -199,7 +211,9 @@ class SongDAO(BaseDAO[Song]):
                 date_time_original=date_time_original,
                 file_type=file_type,
                 file_size_mb=file_size_mb,
-                tags=tags
+                tags=tags,
+                quality_score=quality_score,
+                waveform_preview=waveform_preview
             )
         else:
             return self.create_song(
@@ -224,7 +238,9 @@ class SongDAO(BaseDAO[Song]):
                 date_time_original=date_time_original,
                 file_type=file_type,
                 file_size_mb=file_size_mb,
-                tags=tags
+                tags=tags,
+                quality_score=quality_score,
+                waveform_preview=waveform_preview
             )
 
     def delete_by_filepath(self, filepath: str) -> bool:

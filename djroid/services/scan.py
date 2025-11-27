@@ -1,5 +1,6 @@
 import json
 import sys
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from rich.console import Console
@@ -9,17 +10,30 @@ from rich import box
 from mutagen import File
 from mutagen.id3 import ID3
 from mutagen.aiff import AIFF
+import numpy as np
+import librosa
+import soundfile as sf
 from djroid.logging import get_logger
 from djroid.db import init_db, get_db
 from djroid.db.dao.song_dao import SongDAO
 from djroid.services.tag import Tag
+from djroid.utility.audio_analysis import analyze_audio_quality
 
 logger = get_logger(__name__)
 
 class Scan:
+    """
+    Service for scanning and analyzing music files into the database.
+
+    Handles comprehensive metadata extraction, audio quality analysis,
+    waveform generation, and tag processing for music files.
+    """
+
     def __init__(self):
+        """Initialize Scan service with console output, tag service integration, and waveform parameters."""
         self.console = Console()
         self.tag_service = Tag()
+        self.waveform_points = 80  # Number of points in waveform preview
         
     def find_music_files(self, directory: Path) -> List[Path]:
         """Find all music files in the given directory recursively"""
@@ -136,6 +150,60 @@ class Scan:
         # Use the shared function from the tag service
         return self.tag_service.build_tags_json_from_file(file_path)
     
+    def generate_waveform_preview(self, file_path: Path) -> Optional[List[float]]:
+        """
+        Generate downsampled waveform preview with normalized amplitude values
+        
+        Returns list of ~80 float values between 0.0 and 1.0
+        """
+        try:
+            # Load audio file using librosa (automatically handles mono conversion)
+            samples, sample_rate = librosa.load(str(file_path), mono=True, sr=None)
+            
+            # samples are already normalized to [-1, 1] by librosa
+            if len(samples) == 0:
+                return [0.0] * self.waveform_points
+            
+            # Downsample to target number of points
+            if len(samples) <= self.waveform_points:
+                # If audio is very short, pad with zeros
+                waveform = np.pad(samples, (0, max(0, self.waveform_points - len(samples))))[:self.waveform_points]
+            else:
+                # Downsample by taking RMS of chunks
+                chunk_size = len(samples) // self.waveform_points
+                waveform = []
+                
+                for i in range(self.waveform_points):
+                    start_idx = i * chunk_size
+                    end_idx = min((i + 1) * chunk_size, len(samples))
+                    
+                    if start_idx < len(samples):
+                        chunk = samples[start_idx:end_idx]
+                        # Use RMS (Root Mean Square) for better amplitude representation
+                        rms = np.sqrt(np.mean(chunk ** 2))
+                        waveform.append(float(rms))
+                    else:
+                        waveform.append(0.0)
+                
+                waveform = np.array(waveform)
+            
+            # Convert to absolute values and normalize to [0, 1] range for display
+            waveform = np.abs(waveform)
+            if len(waveform) > 0:
+                max_amplitude = np.max(waveform)
+                if max_amplitude > 0:
+                    waveform = waveform / max_amplitude
+            
+            # Convert to list and ensure all values are between 0 and 1
+            waveform_list = [max(0.0, min(1.0, float(val))) for val in waveform]
+            
+            logger.debug(f"Generated waveform for {file_path.name}: {len(waveform_list)} points, max={max(waveform_list):.3f}")
+            
+            return waveform_list
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate waveform for {file_path}: {e}")
+            return None
     def scan_single_file(self, file_path: Path, db_session) -> bool:
         """Scan a single music file and add/update it in the database"""
         try:
@@ -146,6 +214,10 @@ class Scan:
             
             # Get tags JSON using the shared function
             tags_json = self.tag_service.build_tags_json_from_file(file_path)
+            
+            # Perform audio analysis
+            quality_score = analyze_audio_quality(file_path)
+            waveform_preview = self.generate_waveform_preview(file_path)
             
             # Create or update the song in the database
             song = song_dao.create_or_update_song(
@@ -170,7 +242,9 @@ class Scan:
                 date_time_original=metadata.get('date_time_original'),
                 file_type=metadata.get('file_type'),
                 file_size_mb=metadata.get('file_size_mb'),
-                tags=tags_json if tags_json else None
+                tags=tags_json if tags_json else None,
+                quality_score=quality_score,
+                waveform_preview=waveform_preview
             )
             
             logger.debug(f"Processed file: {file_path.name}")
