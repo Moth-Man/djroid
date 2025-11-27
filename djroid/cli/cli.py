@@ -8,6 +8,8 @@ from djroid.services.tag_schema import TagSchema
 from djroid.services.tag import Tag
 from djroid.services.scan import Scan
 from djroid.services.tag_interactive import TagInteractive
+from djroid.services.drop import Drop
+from djroid.services.mutate import Mutate
 from djroid.textual.app import run_gui
 
 # Initialize logger for this module
@@ -126,6 +128,62 @@ def scan(directory: str, file: str, no_progress: bool):
     except Exception as e:
         logger.error(f"Failed to scan songs: {str(e)}", exc_info=True)
         click.echo(f"Error scanning songs: {str(e)}", err=True)
+
+@cli.command()
+def drop():
+    """Drop all database tables and reinitialize schema (for testing)"""
+    logger.info("Starting database drop operation")
+    try:
+        drop_service = Drop()
+        if drop_service.drop_and_reinit():
+            click.echo("Database dropped and reinitialized successfully.")
+        else:
+            click.echo("Failed to drop and reinitialize database.", err=True)
+    except Exception as e:
+        logger.error(f"Failed to drop database: {str(e)}", exc_info=True)
+        click.echo(f"Error dropping database: {str(e)}", err=True)
+
+@cli.command()
+@click.argument('input_files', nargs=-1, required=True, type=click.Path(exists=True))
+@click.option('--mp3', 'target_format', flag_value='mp3', help='Convert to MP3 format')
+@click.option('--wav', 'target_format', flag_value='wav', help='Convert to WAV format')
+@click.option('--aiff', 'target_format', flag_value='aiff', help='Convert to AIFF format')
+@click.option('--flac', 'target_format', flag_value='flac', help='Convert to FLAC format')
+@click.option('--m4a', 'target_format', flag_value='m4a', help='Convert to M4A format')
+@click.option('--ogg', 'target_format', flag_value='ogg', help='Convert to OGG format')
+def mutate(input_files: tuple, target_format: str):
+    """Convert audio files to different formats using ffmpeg"""
+    logger.info("Starting audio file conversion")
+
+    if not target_format:
+        click.echo("Error: You must specify a target format using one of: --mp3, --wav, --aiff, --flac, --m4a, --ogg", err=True)
+        return
+
+    try:
+        mutate_service = Mutate()
+
+        # Convert paths to Path objects
+        file_paths = [Path(f) for f in input_files]
+
+        if len(file_paths) == 1:
+            # Single file conversion
+            success = mutate_service.convert_single_file(file_paths[0], target_format)
+            if success:
+                logger.info("Single file conversion completed successfully")
+            else:
+                logger.error("Single file conversion failed")
+        else:
+            # Multiple file conversion
+            results = mutate_service.convert_multiple_files(file_paths, target_format)
+            if results['success'] > 0:
+                logger.info(f"Conversion completed: {results['success']} successful, {results['failed']} failed, {results['skipped']} skipped")
+            else:
+                logger.error("All conversions failed")
+
+    except Exception as e:
+        logger.error(f"Failed to convert files: {str(e)}", exc_info=True)
+        click.echo(f"Error converting files: {str(e)}", err=True)
+
 
 if __name__ == '__main__':
     cli()
