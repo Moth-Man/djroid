@@ -1,0 +1,19 @@
+# Core CLI
+click>=8.0.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
+# Audio processing
+mutagen>=1.47.0
+librosa>=0.10.0
+soundfile>=0.12.0
+numpy>=1.24.0
+
+# UI/Terminal
+rich>=13.0.0
+textual>=0.40.0
+
+# Configuration
+python-dotenv>=1.0.0
