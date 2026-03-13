@@ -1,4 +1,4 @@
-# DJroid
+# dj-en
 
 A powerful music library management tool for DJs, built with Python and PostgreSQL.
 
@@ -8,14 +8,15 @@ A powerful music library management tool for DJs, built with Python and PostgreS
 - Playlist management
 - Tag-based organization
 - BPM and key tracking
+- Metadata-based file migration
 - Modern database design with SQLAlchemy
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/djroid.git
-cd djroid
+git clone https://github.com/Moth-Man/dj-en.git
+cd dj-en
 ```
 
 2. Create and activate a virtual environment:
@@ -31,19 +32,24 @@ pip install -e .
 
 4. Set up PostgreSQL:
 - Install PostgreSQL if you haven't already
-- Create a database named 'djroid'
+- Create a database named 'dj_en_dev'
 - Update the `.env` file with your database URL if needed
 
 ## Usage
 
-Initialize the database:
+Launch the TUI:
 ```bash
-djroid init
+dj-en
 ```
 
-Ingest music files:
+Scan music files:
 ```bash
-djroid ingest /path/to/music/directory
+dj-en scan /path/to/music/directory
+```
+
+Migrate files based on metadata rules:
+```bash
+dj-en migrate
 ```
 
 ## Development
@@ -62,4 +68,4 @@ pytest
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
