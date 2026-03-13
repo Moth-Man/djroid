@@ -10,6 +10,7 @@ from djroid.services.scan import Scan
 from djroid.services.tag_interactive import TagInteractive
 from djroid.services.drop import Drop
 from djroid.services.mutate import Mutate
+from djroid.services.migrate import Migrate
 from djroid.textual.app import run_gui
 
 # Initialize logger for this module
@@ -183,6 +184,54 @@ def mutate(input_files: tuple, target_format: str):
     except Exception as e:
         logger.error(f"Failed to convert files: {str(e)}", exc_info=True)
         click.echo(f"Error converting files: {str(e)}", err=True)
+
+
+@cli.command()
+@click.argument('directory', type=click.Path(exists=True), required=False)
+@click.option('--file', type=click.Path(exists=True), help='Migrate a single file instead of a directory')
+@click.option('--dry-run', is_flag=True, help='Show what would be done without moving files')
+@click.option('--no-progress', is_flag=True, help='Disable progress bar')
+def migrate(directory: str, file: str, dry_run: bool, no_progress: bool):
+    """Migrate music files to directories based on metadata rules.
+
+    Reads file metadata (genre, artist, etc.) and moves files to destination
+    directories based on rules configured in the TUI settings.
+
+    If no directory is specified, uses the current working directory.
+    """
+    logger.info("Starting migrate operation")
+    try:
+        migrate_service = Migrate()
+
+        if file:
+            # Migrate single file
+            file_path = Path(file)
+            success = migrate_service.migrate_single_file(file_path, dry_run=dry_run)
+            if success:
+                logger.info("Single file migration completed successfully")
+            else:
+                logger.error("Single file migration failed")
+        else:
+            # Migrate directory
+            dir_path = Path(directory) if directory else Path.cwd()
+
+            result = migrate_service.migrate_directory(
+                dir_path,
+                dry_run=dry_run,
+                show_progress=not no_progress
+            )
+
+            if result['success'] > 0 or result['no_match'] > 0:
+                logger.info(
+                    f"Migration completed: {result['success']} moved, "
+                    f"{result['failed']} failed, {result['skipped']} skipped"
+                )
+            else:
+                logger.warning("No files were migrated")
+
+    except Exception as e:
+        logger.error(f"Failed to migrate files: {str(e)}", exc_info=True)
+        click.echo(f"Error migrating files: {str(e)}", err=True)
 
 
 if __name__ == '__main__':
