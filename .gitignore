@@ -40,4 +40,4 @@ Thumbs.db
 # Logs
 logs/
 *.log
-djroid.log 
+dj-en.log 
