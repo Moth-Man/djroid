@@ -1,5 +1,6 @@
 from .session import Base, engine, get_db, init_database, check_database_connection
 from .models.song import Song
+from .models.migration_rule import MigrationRule
 from ..logging import get_logger
 
 logger = get_logger(__name__)

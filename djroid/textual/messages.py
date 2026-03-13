@@ -19,3 +19,19 @@ class SongTagsUpdated(Message):
         self.song_id = song_id
         self.has_tags = has_tags
         self.new_tags = new_tags
+
+
+class SettingsCategorySelected(Message):
+    """Message sent when a settings category is selected."""
+
+    def __init__(self, category: str) -> None:
+        super().__init__()
+        self.category = category
+
+
+class TabChanged(Message):
+    """Message sent when navigation tab changes."""
+
+    def __init__(self, tab: str) -> None:
+        super().__init__()
+        self.tab = tab  # "library", "chat", or "settings"
