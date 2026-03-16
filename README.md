@@ -1,6 +1,6 @@
 # dj-en
 
-A powerful music library management tool for DJs, built with Python and PostgreSQL.
+(Disk Jockey Etymological Network) A powerful music library management tool for DJs, built with Python and PostgreSQL.
 
 ## Features
 
